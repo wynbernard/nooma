@@ -20,6 +20,18 @@ $page_description = "Manage sales and transactions";
 
 require_once __DIR__ . "/../../backend/config/database.php";
 
+$ownerAccountNames = [];
+$ownerAccountNamesResult = mysqli_query($conn, "SELECT account_holder_id, account_name FROM account_holders WHERE account_type = 'owner'");
+if ($ownerAccountNamesResult) {
+    while ($ownerAccount = mysqli_fetch_assoc($ownerAccountNamesResult)) {
+        $ownerAccountNames[(string) $ownerAccount["account_holder_id"]] = $ownerAccount["account_name"];
+    }
+}
+
+$isPaidNote = static function ($note): bool {
+    return preg_match('/(?:^|[^a-z])paid(?:$|[^a-z])/i', (string) $note) === 1;
+};
+
 $sales = [];
 $salesResult = mysqli_query($conn, "
     SELECT
@@ -27,6 +39,8 @@ $salesResult = mysqli_query($conn, "
         dr.report_number,
         dr.report_date,
         dr.shift_name,
+        COALESCE(bar_sales.bar_sales_total, 0) AS bar_sales_total,
+        COALESCE(kitchen_sales.kitchen_sales_total, 0) AS kitchen_sales_total,
         dr.total_tables,
         dr.total_pax,
         dr.telegram_declared_total,
@@ -37,6 +51,18 @@ $salesResult = mysqli_query($conn, "
         COALESCE(payments.payment_total, 0) AS payment_total
     FROM daily_reports dr
     INNER JOIN users u ON u.user_id = dr.cashier_id
+    LEFT JOIN (
+        SELECT report_id, SUM(amount) AS bar_sales_total
+        FROM report_sales
+        WHERE sales_type = 'bar'
+        GROUP BY report_id
+    ) bar_sales ON bar_sales.report_id = dr.report_id
+    LEFT JOIN (
+        SELECT report_id, SUM(amount) AS kitchen_sales_total
+        FROM report_sales
+        WHERE sales_type = 'kitchen'
+        GROUP BY report_id
+    ) kitchen_sales ON kitchen_sales.report_id = dr.report_id
     LEFT JOIN (
         SELECT report_id, SUM(amount) AS payment_total
         FROM report_payments
@@ -51,29 +77,35 @@ if ($salesResult) {
     }
 }
 
+$nonPosSales = 0.0;
+$nonPosTransactions = 0;
+foreach ($sales as $sale) {
+    $savedFields = json_decode($sale["notes"] ?? "", true);
+    $savedChannel = is_array($savedFields)
+        ? strtoupper(trim((string) ($savedFields["saleChannel"] ?? "")))
+        : "";
+    $isNonPos = $savedChannel === "NON POS" || (float) $sale["pos_sales_total"] <= 0;
+    if ($isNonPos) {
+        $nonPosSales += (float) $sale["telegram_declared_total"];
+        $nonPosTransactions++;
+    }
+}
+
 // Calculate overall statistics (not just current page)
 $statsResult = mysqli_query($conn, "
     SELECT
         SUM(dr.pos_sales_total) as total_sales,
-        COUNT(*) as total_transactions,
-        SUM(CASE WHEN COALESCE(payments.payment_total, 0) < dr.telegram_declared_total THEN 1 ELSE 0 END) as pending_payments
+        COUNT(*) as total_transactions
     FROM daily_reports dr
-    LEFT JOIN (
-        SELECT report_id, SUM(amount) AS payment_total
-        FROM report_payments
-        GROUP BY report_id
-    ) payments ON payments.report_id = dr.report_id
 ");
 
 $totalSales = 0;
 $totalTransactions = 0;
-$pendingPayments = 0;
 
 if ($statsResult) {
     $stats = mysqli_fetch_assoc($statsResult);
     $totalSales = (float) ($stats['total_sales'] ?? 0);
     $totalTransactions = (int) ($stats['total_transactions'] ?? 0);
-    $pendingPayments = (int) ($stats['pending_payments'] ?? 0);
 }
 mysqli_free_result($statsResult);
 
@@ -150,97 +182,106 @@ if ($existingSaleTypesResult) {
             <div class="bg-white border rounded-2xl p-5 shadow-sm">
                 <p class="text-sm text-gray-500">Transactions</p>
                 <h3 id="totalTransactions"
-                    class="text-2xl font-bold mt-2"><?= $totalTransactions ?></h3>
+                    class="text-2xl font-bold mt-2"><?= $totalTransactions ?></h3>  
             </div>
 
             <div class="bg-white border rounded-2xl p-5 shadow-sm">
-                <p class="text-sm text-gray-500">Pending Payments</p>
-                <h3 id="pendingPayments"
-                    class="text-2xl font-bold mt-2 text-orange-500"><?= $pendingPayments ?></h3>
+                <p class="text-sm text-gray-500">Non-POS Sales</p>
+                <h3 id="nonPosSalesTotal"
+                    class="text-2xl font-bold mt-2 text-gray-900">₱<?= number_format($nonPosSales, 2) ?></h3>
+                <p class="text-xs text-gray-500 mt-1"><?= number_format($nonPosTransactions) ?> Non-POS reports</p>
             </div>
 
         </div>
 
         <!-- SALES TABLE -->
-        <section class="bg-white border rounded-2xl shadow-sm mb-6 overflow-hidden">
-            <div class="p-5 md:p-6 border-b flex flex-wrap items-center justify-between gap-4">
+       <section class="bg-white border border-gray-100 rounded-2xl shadow-sm mb-6 overflow-hidden">
+            <!-- Header & Controls Bar -->
+            <div class="p-5 md:p-6 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
                 <div>
-                    <h3 class="text-lg font-bold">Saved Sales</h3>
-                    <p class="text-sm text-gray-500 mt-1">Recently recorded daily sales reports.</p>
+                    <h3 class="text-lg font-bold text-gray-900 tracking-tight">Saved Sales</h3>
+                    <p class="text-sm text-gray-500 mt-0.5">Recently recorded daily sales reports and performance analytics.</p>
                 </div>
-                <div class="flex items-center gap-3">
-                    <!-- <label class="flex items-center gap-2 text-sm font-medium text-gray-700 bg-gray-50 border px-3 py-2 rounded-xl cursor-pointer hover:bg-gray-100">
-                        <input type="checkbox" id="filterUnpaidOwners" class="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
-                        Show unpaid owners only
-                    </label> -->
-                    <!-- SEARCH SALES -->
-                        <div class="relative">
-                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400">
-                                🔍
-                            </span>
 
-                            <input
-                                type="search"
-                                id="searchSales"
-                                placeholder="Search sales..."
-                                autocomplete="off"
-                                class="w-64 border rounded-xl pl-10 pr-4 py-2.5 text-sm
-                                    text-gray-700 bg-white
-                                    focus:ring-2 focus:ring-blue-500
-                                    focus:border-blue-500 outline-none"
-                            >
-                        </div>
-                         <input
-                                type="date"
-                                id="filterSalesDate"
-                                class="border rounded-xl px-3 py-2.5 text-sm text-gray-700 bg-white
-                                    focus:ring-2 focus:ring-blue-500
-                                    focus:border-blue-500 outline-none"
-                            >
+                <div class="flex flex-wrap items-center gap-3">
+                    <!-- Search Input -->
+                    <div class="relative">
+                        <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                            🔍
+                        </span>
+                        <input
+                            type="search"
+                            id="searchSales"
+                            placeholder="Search sales..."
+                            autocomplete="off"
+                            class="w-60 border border-gray-200 rounded-xl pl-10 pr-4 py-2 text-sm text-gray-800 bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none transition-all"
+                        >
+                    </div>
 
-                    <select id="filterSalesChannel" aria-label="Filter sales channel"
-                            class="border rounded-xl px-3 py-2 text-sm font-medium text-gray-700 bg-white focus:ring-blue-500 focus:border-blue-500">
+                    <!-- Date Filter -->
+                    <input
+                        type="date"
+                        id="filterSalesDate"
+                        class="border border-gray-200 rounded-xl px-3.5 py-2 text-sm font-medium text-gray-700 bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none transition-all cursor-pointer"
+                    >
+
+                    <!-- Channel Filter Select -->
+                    <select 
+                        id="filterSalesChannel" 
+                        aria-label="Filter sales channel"
+                        class="border border-gray-200 rounded-xl px-3.5 py-2 text-sm font-medium text-gray-700 bg-gray-50/50 focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none transition-all cursor-pointer"
+                    >
                         <option value="all">All channels</option>
                         <option value="pos">POS only</option>
                         <option value="non-pos">Non POS only</option>
                     </select>
-                    <button type="button" id="openSaleModal"
-                            class="px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700">
-                        + Add Sale
+
+                    <!-- Add Sale Button -->
+                    <button 
+                        type="button" 
+                        id="openSaleModal"
+                        class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold shadow-sm shadow-blue-500/20 transition-all flex items-center gap-1.5"
+                    >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
+                        Add Sale
                     </button>
                 </div>
             </div>
 
+            <!-- Table Section -->
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left">
-                    <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+                <table class="w-full text-sm text-left border-collapse">
+                    <thead class="bg-gray-50/75 text-gray-400 uppercase text-[11px] font-semibold tracking-wider border-b border-gray-100">
                         <tr>
-                            <!-- <th class="px-5 py-3">Report</th> -->
-                            <th class="px-5 py-3">Date</th>
-                            <th class="px-5 py-3">Shift</th>
-                            <th class="px-5 py-3">Tables / Pax</th>
-                            <th class="px-5 py-3">Sales</th>
-                            <th class="px-5 py-3">Status</th>
-                            <th class="px-5 py-3">Actions</th>
+                            <th class="px-6 py-3.5">Date</th>
+                            <th class="px-6 py-3.5">Shift</th>
+                            <th class="px-6 py-3.5">Cash Remitted</th>
+                            <th class="px-6 py-3.5">Kitchen Sale</th>
+                            <th class="px-6 py-3.5">Tables / Pax</th>
+                            <th class="px-6 py-3.5">Sales</th>
+                            <th class="px-6 py-3.5">Unpaid Accounts</th>
+                            <th class="px-6 py-3.5 text-right">Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="salesTableBody" class="divide-y">
+                    <tbody id="salesTableBody" class="divide-y divide-gray-100 text-gray-600">
                         <?php if (empty($sales)): ?>
                             <tr>
-                                <td colspan="8" class="px-5 py-8 text-center text-gray-500">
-                                    No saved sales yet.
+                                <td colspan="7" class="px-6 py-12 text-center text-gray-400 font-medium">
+                                    No saved sales found. Try adjusting your filters or add a new record.
                                 </td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($sales as $sale): ?>
                                 <?php
                                 $saleFields = [];
-                                $hasUnpaidOwnerAccount = false;
                                 $shortOver = 0.0;
+                                $cashRemitted = 0.0;
                                 $ownerImages = [];
+                                $unpaidSaleAccounts = [];
                                 $savedFields = json_decode($sale["notes"] ?? "", true);
                                 $saleChannel = "pos";
                                 if (is_array($savedFields)) {
+                                    $cashRemitted = (float) str_replace(",", "", (string) ($savedFields["cashRemitted"] ?? 0));
                                     $saleChannel = strtoupper(trim((string) ($savedFields["saleChannel"] ?? ""))) === "NON POS"
                                         ? "non-pos"
                                         : ((float) $sale["pos_sales_total"] > 0 ? "pos" : "non-pos");
@@ -258,8 +299,15 @@ if ($existingSaleTypesResult) {
                                         $value = $amount;
                                         if (!empty($note)) {
                                             $value .= " (" . htmlspecialchars($note) . ")";
-                                            if (stripos($note, "unpaid") !== false) {
-                                                $hasUnpaidOwnerAccount = true;
+                                        }
+                                        $amountValue = (float) str_replace(",", "", (string) $amount);
+                                        if (stripos((string) $note, "unpaid") !== false && !$isPaidNote($note)) {
+                                            if ($amountValue > 0) {
+                                                $unpaidSaleAccounts[] = [
+                                                    "type" => "Owner",
+                                                    "name" => $ownerAccountNames[(string) $accountId] ?? ("Owner account #" . $accountId),
+                                                    "amount" => $amountValue
+                                                ];
                                             }
                                         }
                                         $saleFields["Owner account #" . $accountId] = $value;
@@ -267,39 +315,79 @@ if ($existingSaleTypesResult) {
                                             $ownerImages[$accountId] = $image;
                                         }
                                     }
+
+                                    $unpaidAccountNames = [];
+                                    if (!empty($savedFields["unpaidAccountName"])) {
+                                        $unpaidAccountNames[""] = $savedFields["unpaidAccountName"];
+                                    }
+                                    foreach ($savedFields as $fieldName => $fieldValue) {
+                                        if (preg_match('/^unpaidAccountName_(\d+)$/', $fieldName, $matches)) {
+                                            $unpaidAccountNames[$matches[1]] = $fieldValue;
+                                        }
+                                    }
+                                    foreach ($unpaidAccountNames as $accountIndex => $accountName) {
+                                        $amountField = $accountIndex === "" ? "unpaidAccountAmount" : "unpaidAccountAmount_" . $accountIndex;
+                                        $noteField = $accountIndex === "" ? "unpaidAccountNote" : "unpaidAccountNote_" . $accountIndex;
+                                        $accountAmount = (float) str_replace(",", "", (string) ($savedFields[$amountField] ?? 0));
+                                        $accountNote = $savedFields[$noteField] ?? "";
+                                        $accountName = trim((string) $accountName);
+                                        if ($accountName !== "" && $accountAmount > 0 && !$isPaidNote($accountNote)) {
+                                            $unpaidSaleAccounts[] = [
+                                                "type" => "Account",
+                                                "name" => $accountName,
+                                                "amount" => $accountAmount
+                                            ];
+                                        }
+                                    }
                                 }
-                                $rowClass = $hasUnpaidOwnerAccount ? "bg-red-50 hover:bg-red-100" : "hover:bg-gray-50";
+                                $hasUnpaidAccount = !empty($unpaidSaleAccounts);
+                                $rowClass = $hasUnpaidAccount ? "bg-red-50/60 hover:bg-red-50" : "hover:bg-gray-50/50";
                                 ?>
-                                <tr class="sale-row <?= $rowClass ?>"
-                                    data-has-unpaid="<?= $hasUnpaidOwnerAccount ? 'true' : 'false' ?>"
+                                <tr class="sale-row transition-colors <?= $rowClass ?>"
+                                    data-has-unpaid="<?= $hasUnpaidAccount ? 'true' : 'false' ?>"
                                     data-sale-channel="<?= $saleChannel ?>"
                                     data-sale-date="<?= htmlspecialchars($sale["report_date"]) ?>">
-                                    <!-- <td class="px-5 py-4 font-semibold">
-                                        <?= htmlspecialchars($sale["report_number"]) ?>
-                                        <?php if ($hasUnpaidOwnerAccount): ?>
-                                            <span class="ml-2 inline-flex items-center justify-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 border border-red-200">
-                                                Unpaid Owner
-                                            </span>
-                                        <?php endif; ?>
-                                    </td> -->
-                                    <td class="px-5 py-4">
-                                        <?= date("F d, Y", strtotime($sale["report_date"])) ?>
+                                    
+                                    <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">
+                                        <?= date("M d, Y", strtotime($sale["report_date"])) ?>
                                     </td>
-                                    <td class="px-5 py-4"><?= htmlspecialchars($sale["shift_name"]) ?></td>
-                                    <td class="px-5 py-4">
-                                        <?= (int) $sale["total_tables"] ?> / <?= (int) $sale["total_pax"] ?>
-                                    </td>
-                                    <td class="px-5 py-4 font-semibold">
-                                        ₱<?= number_format((float) $sale["payment_total"], 2) ?>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">
-                                            <?= htmlspecialchars(ucfirst($sale["status"])) ?>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-gray-100 text-gray-800">
+                                            <?= htmlspecialchars($sale["shift_name"]) ?>
                                         </span>
                                     </td>
-                                    <td class="px-5 py-4 whitespace-nowrap">
+                                    <td class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
+                                        ₱<?= number_format((float) $cashRemitted, 2) ?>
+                                    </td>
+                                    <td class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
+                                        ₱<?= number_format((float) $sale["kitchen_sales_total"], 2) ?>
+                                    </td>
+                                    <td class="px-6 py-4 text-gray-500 whitespace-nowrap">
+                                        <span class="font-medium text-gray-800"><?= (int) $sale["total_tables"] ?></span> <span class="text-gray-400">/</span> <?= (int) $sale["total_pax"] ?> pax
+                                    </td>
+                                    <td class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
+                                        ₱<?= number_format((float) $sale["payment_total"], 2) ?>
+                                    </td>
+                                    <td class="px-6 py-4 min-w-[220px]">
+                                        <?php if (empty($unpaidSaleAccounts)): ?>
+                                            <span class="text-gray-400">-</span>
+                                        <?php else: ?>
+                                            <div class="space-y-1.5">
+                                                <?php foreach ($unpaidSaleAccounts as $unpaidAccount): ?>
+                                                    <div class="flex items-start justify-between gap-3">
+                                                        <span class="text-xs text-gray-700 break-words">
+                                                            <span class="text-gray-400"><?= htmlspecialchars($unpaidAccount["type"]) ?>:</span>
+                                                            <?= htmlspecialchars($unpaidAccount["name"]) ?>
+                                                        </span>
+                                                        <span class="shrink-0 text-xs font-semibold text-amber-800">₱<?= number_format($unpaidAccount["amount"], 2) ?></span>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-6 py-4 text-right whitespace-nowrap space-x-1.5">
                                         <button type="button"
-                                                class="edit-sale px-3 py-1.5 text-blue-700 bg-blue-50 rounded-lg font-medium hover:bg-blue-100"
+                                                class="edit-sale px-3 py-1.5 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg text-xs font-semibold transition-all"
                                                 data-report-id="<?= (int) $sale["report_id"] ?>"
                                                 data-date="<?= htmlspecialchars($sale["report_date"], ENT_QUOTES) ?>"
                                                 data-shift="<?= htmlspecialchars($sale["shift_name"], ENT_QUOTES) ?>"
@@ -310,47 +398,113 @@ if ($existingSaleTypesResult) {
                                             Edit
                                         </button>
                                         <button type="button"
-                                                class="delete-sale ml-2 px-3 py-1.5 text-red-700 bg-red-50 rounded-lg font-medium hover:bg-red-100"
+                                                class="delete-sale px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg text-xs font-semibold transition-all"
                                                 data-report-id="<?= (int) $sale["report_id"] ?>">
                                             Delete
                                         </button>
                                         <button type="button"
-                                                class="toggle-sale-details ml-2 px-3 py-1.5 text-gray-700 bg-gray-100 rounded-lg font-medium hover:bg-gray-200"
+                                                class="toggle-sale-details px-3 py-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-semibold transition-all"
                                                 aria-expanded="false"
                                                 data-target="sale-details-<?= (int) $sale["report_id"] ?>">
                                             Details
                                         </button>
                                     </td>
                                 </tr>
-                                <tr id="sale-details-<?= (int) $sale["report_id"] ?>" class="sale-details-row hidden bg-gray-50" data-has-unpaid="<?= $hasUnpaidOwnerAccount ? 'true' : 'false' ?>" data-sale-channel="<?= $saleChannel ?>">
-                                    <td colspan="8" class="px-5 py-5">
-                                        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                            <?php if (empty($saleFields)): ?>
-                                                <p class="sm:col-span-2 lg:col-span-4 text-sm text-gray-500">
-                                                    No saved form details are available for this sale.
+
+                                <!-- Expandable Details Row -->
+                                <tr id="sale-details-<?= (int) $sale["report_id"] ?>" 
+                                    class="sale-details-row hidden bg-gray-50" 
+                                    data-has-unpaid="<?= $hasUnpaidAccount ? 'true' : 'false' ?>" 
+                                    data-sale-channel="<?= $saleChannel ?>">
+                                    
+                                    <td colspan="7" class="px-5 py-5">
+                                        <div class="bg-white border rounded-xl p-4">
+                                            
+                                            <!-- Header Section with Search Box -->
+                                            <div class="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-gray-100">
+                                                <div>
+                                                    <p class="font-semibold text-gray-900">Detailed Sale & Account Breakdown</p>
+                                                    <p class="text-xs text-gray-500">Report ID: #<?= (int) $sale["report_id"] ?></p>
+                                                </div>
+                                                
+                                                <div class="flex items-center gap-2 flex-wrap">
+                                                    <!-- Search Input -->
+                                                    <div class="relative">
+                                                        <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-gray-400">
+                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                                            </svg>
+                                                        </span>
+                                                        <input type="text" 
+                                                            id="search-details-<?= (int) $sale["report_id"] ?>" 
+                                                            onkeyup="filterSaleDetails(<?= (int) $sale["report_id"] ?>)" 
+                                                            placeholder="Search details..." 
+                                                            class="pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all w-44 sm:w-52">
+                                                    </div>
+
+                                                    <span class="text-xs font-semibold px-2.5 py-1.5 bg-gray-100 rounded-md text-gray-700">
+                                                        Channel: <?= htmlspecialchars($saleChannel) ?>
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <?php 
+                                                // Filter out fields that are empty, null, or blank strings
+                                                $filteredFields = array_filter($saleFields, function($val) {
+                                                    return $val !== null && trim((string)$val) !== '';
+                                                });
+                                                
+                                                // Filter out images where path is empty
+                                                $filteredImages = array_filter($ownerImages, function($path) {
+                                                    return $path !== null && trim((string)$path) !== '';
+                                                });
+                                            ?>
+
+                                            <?php if (empty($filteredFields) && empty($filteredImages)): ?>
+                                                <!-- Empty State -->
+                                                <p class="text-xs text-gray-400 py-4 text-center">
+                                                    No saved form details or attachments are available for this sale.
                                                 </p>
                                             <?php else: ?>
-                                                <?php foreach ($saleFields as $fieldName => $fieldValue): ?>
-                                                    <div class="bg-white border rounded-lg p-3">
-                                                        <p class="text-xs text-gray-500">
-                                                            <?= htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName))) ?>
-                                                        </p>
-                                                        <p class="mt-1 font-semibold break-words">
-                                                            <?= htmlspecialchars((string) $fieldValue) ?>
-                                                        </p>
-                                                    </div>
-                                                <?php endforeach; ?>
-                                                <?php foreach ($ownerImages as $accountId => $imagePath): ?>
-                                                    <div class="bg-white border rounded-lg p-3">
-                                                        <p class="text-xs text-gray-500">
-                                                            Owner Account #<?= htmlspecialchars((string) $accountId) ?> Image
-                                                        </p>
-                                                        <a href="../../<?= htmlspecialchars($imagePath) ?>" target="_blank" rel="noopener noreferrer" class="mt-2 inline-block">
-                                                            <img src="../../<?= htmlspecialchars($imagePath) ?>" alt="Owner account attachment" class="h-24 w-24 object-cover rounded-lg border">
-                                                        </a>
-                                                    </div>
-                                                <?php endforeach; ?>
+                                                <!-- Cards Grid Container -->
+                                                <div id="grid-container-<?= (int) $sale["report_id"] ?>" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                                    
+                                                    <!-- Sale Fields Cards (Only with values) -->
+                                                    <?php foreach ($filteredFields as $fieldName => $fieldValue): ?>
+                                                        <div class="detail-card border rounded-lg p-3 bg-white" data-search-text="<?= strtolower(htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName)) . ' ' . $fieldValue)) ?>">
+                                                            <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                                                                <?= htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName))) ?>
+                                                            </p>
+                                                            <p class="text-sm font-semibold text-gray-800 mt-1 break-words">
+                                                                <?= htmlspecialchars((string) $fieldValue) ?>
+                                                            </p>
+                                                        </div>
+                                                    <?php endforeach; ?>
+
+                                                    <!-- Owner Images Cards (Only with values) -->
+                                                    <?php foreach ($filteredImages as $accountId => $imagePath): ?>
+                                                        <div class="detail-card border rounded-lg p-3 bg-white flex flex-col justify-between" data-search-text="<?= strtolower('owner account #' . $accountId . ' image') ?>">
+                                                            <div>
+                                                                <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                                                                    Owner Account #<?= htmlspecialchars((string) $accountId) ?> Image
+                                                                </p>
+                                                            </div>
+                                                            <div class="mt-2">
+                                                                <a href="../../<?= htmlspecialchars($imagePath) ?>" 
+                                                                target="_blank" 
+                                                                rel="noopener noreferrer" 
+                                                                class="inline-block overflow-hidden rounded-lg border border-gray-200 hover:opacity-90 transition-opacity">
+                                                                    <img src="../../<?= htmlspecialchars($imagePath) ?>" 
+                                                                        alt="Owner account attachment" 
+                                                                        class="h-16 w-16 object-cover">
+                                                                </a>
+                                                            </div>
+                                                        </div>
+                                                    <?php endforeach; ?>
+
+                                                </div>
                                             <?php endif; ?>
+
                                         </div>
                                     </td>
                                 </tr>
@@ -582,17 +736,18 @@ document.querySelectorAll(".owner-account").forEach(input => {
 
     input.addEventListener("input", function () {
 
-        // Remove commas and invalid characters
-        this.value = this.value
-            .replace(/,/g, "")
-            .replace(/[^\d.]/g, "");
+        const raw = this.value.replace(/,/g, "");
+        const isNegative = raw.startsWith("-");
+        const sanitized = raw.replace(/-/g, "").replace(/[^\d.]/g, "");
 
-        // Prevent multiple decimal points
-        const parts = this.value.split(".");
+        let value = sanitized;
+        const parts = value.split(".");
 
         if (parts.length > 2) {
-            this.value = parts[0] + "." + parts.slice(1).join("");
+            value = parts[0] + "." + parts.slice(1).join("");
         }
+
+        this.value = isNegative && value !== "" ? "-" + value : value;
 
         calculateOwnerAccounts();
     });
@@ -642,9 +797,9 @@ document.querySelectorAll(".marketing-expense").forEach(input => {
 
     input.addEventListener("input", function () {
 
-        let value = this.value
-            .replace(/,/g, "")
-            .replace(/[^\d.]/g, "");
+        const raw = this.value.replace(/,/g, "");
+        const isNegative = raw.startsWith("-");
+        let value = raw.replace(/-/g, "").replace(/[^\d.]/g, "");
 
         const parts = value.split(".");
 
@@ -652,7 +807,7 @@ document.querySelectorAll(".marketing-expense").forEach(input => {
             value = parts[0] + "." + parts.slice(1).join("");
         }
 
-        this.value = value;
+        this.value = isNegative && value !== "" ? "-" + value : value;
 
         calculateMarketingExpenses();
     });
@@ -841,23 +996,52 @@ function calculateTotalSalesBasedOnPayment() {
     calculateShortOver();
 }
 
+function updateShortOverBadge() {
+    const statusEl = document.getElementById("shortOverStatus");
+    if (!statusEl || !reconShortOver) {
+        return;
+    }
+
+    const difference = parseMoney(reconShortOver.value);
+
+    if (Math.abs(difference) < 0.005) {
+        statusEl.textContent = "Balanced";
+        statusEl.className = "inline-flex items-center rounded-full border border-gray-300 bg-gray-100 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-gray-700";
+        statusEl.classList.remove("hidden");
+        return;
+    }
+
+    if (difference > 0) {
+        statusEl.textContent = `Excess: ${formatMoney(difference)}`;
+        statusEl.className = "inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-emerald-700";
+    } else {
+        statusEl.textContent = `Short: ${formatMoney(Math.abs(difference))}`;
+        statusEl.className = "inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-red-700";
+    }
+
+    statusEl.classList.remove("hidden");
+}
+
 function calculateShortOver() {
     const declaredGrandTotal = parseMoney(grandTotal.value);
     const totalBasedOnPayments = parseMoney(totalSalesBasedOnPayment.value);
     const unpaid = parseMoney(unpaidAccounts.value);
 
     reconShortOver.value = formatMoney(declaredGrandTotal - totalBasedOnPayments - unpaid );
+    updateShortOverBadge();
 }
 
 function sanitizeMoneyInput(input) {
-    input.value = input.value
-        .replace(/,/g, "")
-        .replace(/[^\d.]/g, "");
+    const raw = String(input.value || "").replace(/,/g, "");
+    const isNegative = raw.startsWith("-");
+    let value = raw.replace(/-/g, "").replace(/[^\d.]/g, "");
 
-    const parts = input.value.split(".");
+    const parts = value.split(".");
     if (parts.length > 2) {
-        input.value = parts[0] + "." + parts.slice(1).join("");
+        value = parts[0] + "." + parts.slice(1).join("");
     }
+
+    input.value = isNegative && value !== "" ? "-" + value : value;
 }
 
 [...document.querySelectorAll(".owner-account, .marketing-expense"), unpaidAccounts, ownersDiscount, paidAccounts]
@@ -1016,7 +1200,6 @@ calculateOnlineTips();
         const saleModal = document.getElementById("saleModal");
         const openSaleModal = document.getElementById("openSaleModal");
         const closeSaleModal = document.getElementById("closeSaleModal");
-
         document.querySelectorAll(".toggle-sale-details").forEach(button => {
             button.addEventListener("click", () => {
                 const details = document.getElementById(button.dataset.target);
@@ -1197,7 +1380,7 @@ calculateOnlineTips();
                     populateSaleForm(result.payload);
                     setSaleModalVisibility(true);
                 } catch (error) {
-                    alert(error.message);
+                    window.showToast(error.message, "error");
                 }
             });
         });
@@ -1216,9 +1399,10 @@ calculateOnlineTips();
                     if (!response.ok || !result.success) {
                         throw new Error(result.message || "The sale could not be deleted.");
                     }
-                    window.location.reload();
+                    window.showToast(result.message || "Sale deleted successfully.");
+                    setTimeout(() => window.location.reload(), 1400);
                 } catch (error) {
-                    alert(error.message);
+                    window.showToast(error.message, "error");
                 }
             });
         });
@@ -1271,7 +1455,7 @@ calculateOnlineTips();
             const hasImageExtension = /\.(jpe?g|png|gif|webp)$/i.test(file.name);
             if ((!hasImageType && !hasImageExtension) || file.size > 5 * 1024 * 1024) {
                 fileInput.value = "";
-                alert("Please attach an image up to 5MB.");
+                window.showToast("Please attach an image up to 5MB.", "error");
                 return;
             }
             setOwnerImagePreview(field.dataset.accountId, URL.createObjectURL(file), file.name);
@@ -1376,10 +1560,10 @@ calculateOnlineTips();
                     throw new Error(result.message || "The sale could not be saved.");
                 }
 
-                alert(editingReportId ? result.message : `${result.message} Reference: ${result.report_number}`);
-                window.location.reload();
+                window.showToast(editingReportId ? result.message : `${result.message} Reference: ${result.report_number}`);
+                setTimeout(() => window.location.reload(), 1400);
             } catch (error) {
-                alert(error.message);
+                window.showToast(error.message, "error");
             }
         });
 
@@ -1511,7 +1695,6 @@ calculateOnlineTips();
 
             const saleRows =
                 salesTableBody.querySelectorAll(".sale-row");
-
             const visibleRows =
                 Array.from(saleRows).filter(row =>
                     !row.classList.contains("hidden")
@@ -1533,7 +1716,7 @@ calculateOnlineTips();
 
                     noResultsRow.innerHTML = `
                         <td
-                            colspan="8"
+                            colspan="7"
                             class="px-5 py-8 text-center text-gray-500"
                         >
                             No sales found matching your search.
@@ -1665,7 +1848,7 @@ calculateOnlineTips();
                         "noSalesSearchResults";
 
                     noResultsRow.innerHTML = `
-                        <td colspan="8"
+                        <td colspan="7"
                             class="px-5 py-10 text-center">
 
                             <div class="text-gray-400 text-3xl mb-2">
@@ -1715,6 +1898,25 @@ calculateOnlineTips();
                     applySalesFilters
                 );
             }
+
+            function filterSaleDetails(reportId) {
+    const input = document.getElementById('search-details-' + reportId);
+    const filter = input.value.toLowerCase().trim();
+    const container = document.getElementById('grid-container-' + reportId);
+    
+    if (!container) return;
+    
+    const cards = container.getElementsByClassName('detail-card');
+    
+    for (let i = 0; i < cards.length; i++) {
+        const searchText = cards[i].getAttribute('data-search-text') || '';
+        if (searchText.includes(filter)) {
+            cards[i].style.display = "";
+        } else {
+            cards[i].style.display = "none";
+        }
+    }
+}
     </script>
     <?php include "../components/footer.php"; ?>
 

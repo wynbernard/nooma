@@ -217,10 +217,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     throw new Error(result.message || 'Failed to mark as paid');
                 }
                 
-                alert('Account marked as paid successfully!');
-                window.location.reload();
+                window.showToast(result.message || 'Account marked as paid successfully!');
+                setTimeout(() => window.location.reload(), 1400);
             } catch (error) {
-                alert(error.message);
+                window.showToast(error.message, 'error');
             }
         });
     });

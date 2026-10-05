@@ -293,6 +293,10 @@ foreach ($summary as $shift) {
 function peso(float $amount): string {
     return "₱" . number_format($amount, 2);
 }
+
+$isPaidNote = static function ($note): bool {
+    return preg_match('/(?:^|[^a-z])paid(?:$|[^a-z])/i', (string) $note) === 1;
+};
 ?>
 
 <!DOCTYPE html>
@@ -335,14 +339,14 @@ function peso(float $amount): string {
 
         <div class="grid sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
             <div class="bg-white border rounded-2xl p-5 shadow-sm">
-                <p class="text-sm text-gray-500">Combined Sales</p>
-                <h3 class="text-2xl font-bold mt-2"><?= peso($combined["sales"]) ?></h3>
+                <p class="text-sm text-gray-500">Grand Total Sales</p>
+                <h3 class="text-2xl font-bold mt-2"><?= peso($combined["declared"]) ?></h3>
                 <p class="text-xs text-gray-500 mt-1"><?= $combined["reports"] ?> reports / <?= $combined["pax"] ?> pax</p>
             </div>
             <div class="bg-white border rounded-2xl p-5 shadow-sm">
-                <p class="text-sm text-gray-500">Declared Total</p>
-                <h3 class="text-2xl font-bold mt-2"><?= peso($combined["declared"]) ?></h3>
-                <p class="text-xs text-gray-500 mt-1"><?= $combined["tables"] ?> tables</p>
+                <p class="text-sm text-gray-500">Total Transactions</p>
+                <h3 class="text-2xl font-bold mt-2"><?= number_format($combined["reports"]) ?></h3>
+                <p class="text-xs text-gray-500 mt-1"><?= $combined["tables"] ?> tables / <?= $combined["pax"] ?> pax</p>
             </div>
             <div class="bg-white border rounded-2xl p-5 shadow-sm">
                 <p class="text-sm text-gray-500">QR/GCash to JCB Total</p>
@@ -429,38 +433,67 @@ function peso(float $amount): string {
                 <?php if (empty($dailyChart["labels"])): ?>
                     <p class="py-10 text-center text-sm text-gray-500">No daily totals to chart.</p>
                 <?php else: ?>
-                    <div class="h-80">
-                        <canvas id="dailyGrossChart"></canvas>
+                    <div id="dailyGrossChartViewport" class="w-full overflow-x-auto overscroll-x-contain pb-2">
+                        <div id="dailyGrossChartInner" class="relative h-80 min-w-full">
+                            <canvas id="dailyGrossChart"></canvas>
+                        </div>
                     </div>
                 <?php endif; ?>
             </div>
         </section>
 
-        <section class="bg-white border rounded-2xl shadow-sm overflow-hidden">
-            <div class="p-5 border-b">
-                <h3 class="text-lg font-bold">Report Breakdown</h3>
-                <p class="text-sm text-gray-500 mt-1">Every report included in the summary above.</p>
+        <section class="bg-white border border-gray-200/80 rounded-2xl shadow-xs overflow-hidden">
+            <!-- Section Header -->
+            <div class="px-6 py-5 border-b border-gray-100 flex flex-wrap items-center justify-between gap-4">
+                <div>
+                    <h3 class="text-base font-bold text-gray-900 tracking-tight">Report Breakdown</h3>
+                    <p class="text-xs text-gray-500 mt-0.5">Every report included in the summary above.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <label class="relative">
+                        <span class="sr-only">Search reports</span>
+                        <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m21 21-4.35-4.35M19 10.5a8.5 8.5 0 1 1-17 0 8.5 8.5 0 0 1 17 0Z"></path>
+                        </svg>
+                        <input id="dailyReportSearch" type="search" placeholder="Search reports..." autocomplete="off"
+                               class="w-56 border border-gray-200 rounded-lg pl-9 pr-3 py-2 text-xs text-gray-700 bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none">
+                    </label>
+                    <div class="text-xs font-medium text-gray-400 bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                        Total Reports: <span id="dailyReportCount" class="font-semibold text-gray-700"><?= count($reports) ?></span>
+                    </div>
+                </div>
             </div>
+
+            <!-- Table Container -->
             <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left">
-                    <thead class="bg-gray-50 text-gray-500 uppercase text-xs">
+                <table class="w-full text-sm text-left border-collapse">
+                    <!-- Table Header -->
+                    <thead class="bg-gray-50/70 text-gray-500 uppercase text-[11px] font-semibold tracking-wider border-b border-gray-100">
                         <tr>
-                            <th class="px-5 py-3">Week</th>
-                            <th class="px-5 py-3">Date</th>
-                            <th class="px-5 py-3">Shift</th>
-                            <th class="px-5 py-3">Tables</th>
-                            <th class="px-5 py-3">Pax</th>
-                            <th class="px-5 py-3">Total Gross</th>
-                            <th class="px-5 py-3">Status</th>
-                            <th class="px-5 py-3">Details</th>
+                            <th class="px-6 py-3.5">Week</th>
+                            <th class="px-6 py-3.5">Date</th>
+                            <th class="px-6 py-3.5">Shift</th>
+                            <th class="px-6 py-3.5">Tables</th>
+                            <th class="px-6 py-3.5">Pax</th>
+                            <th class="px-6 py-3.5">Bar Sale</th>
+                            <th class="px-6 py-3.5">Kitchen Sale</th>
+                            <th class="px-6 py-3.5">Grand Total</th>
+                            <th class="px-6 py-3.5">Unpaid Accounts</th>
+                            <th class="px-6 py-3.5 text-right">Actions</th>
                         </tr>
                     </thead>
 
-                    <tbody class="divide-y">
+                    <!-- Table Body -->
+                    <tbody id="dailyReportTableBody" class="divide-y divide-gray-100 text-gray-700 text-xs">
                         <?php if (empty($reports)): ?>
                             <tr>
-                                <td colspan="8" class="px-5 py-8 text-center text-gray-500">
-                                    No reports found.
+                                <td colspan="10" class="px-6 py-12 text-center text-gray-400">
+                                    <div class="flex flex-col items-center justify-center gap-1.5">
+                                        <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                        <p class="font-medium text-gray-500">No reports found.</p>
+                                    </div>
                                 </td>
                             </tr>
                         <?php else: ?>
@@ -471,6 +504,7 @@ function peso(float $amount): string {
                                     static fn (array $detail): bool => $detail["report_date"] === $report["report_date"]
                                 ));
                                 $combinedDetailFields = [];
+                                $dailyUnpaidAccounts = [];
                                 foreach ($dayDetails as $dayDetail) {
                                     $dayPayload = json_decode($dayDetail["notes"] ?? "", true);
                                     if (!is_array($dayPayload)) {
@@ -493,62 +527,153 @@ function peso(float $amount): string {
                                             $combinedDetailFields[$fieldName] = ($combinedDetailFields[$fieldName] ?? 0) + (float) $numericAmount;
                                         }
                                     }
+
+                                    if (($dayDetail["status"] ?? "") !== "voided") {
+                                        foreach (($dayPayload["ownerAccounts"] ?? []) as $accountId => $amount) {
+                                            $ownerNote = $dayPayload["ownerNote_" . $accountId] ?? "";
+                                            $ownerAmount = (float) str_replace(",", "", (string) $amount);
+                                            if (stripos((string) $ownerNote, "unpaid") !== false && !$isPaidNote($ownerNote) && $ownerAmount > 0) {
+                                                $unpaidKey = "owner:" . $accountId;
+                                                $dailyUnpaidAccounts[$unpaidKey] = [
+                                                    "name" => $ownerAccountNames[(string) $accountId] ?? ("Owner account #" . $accountId),
+                                                    "amount" => ($dailyUnpaidAccounts[$unpaidKey]["amount"] ?? 0) + $ownerAmount
+                                                ];
+                                            }
+                                        }
+
+                                        $unpaidAccountNames = [];
+                                        if (!empty($dayPayload["unpaidAccountName"])) {
+                                            $unpaidAccountNames[""] = $dayPayload["unpaidAccountName"];
+                                        }
+                                        foreach ($dayPayload as $fieldName => $fieldValue) {
+                                            if (preg_match('/^unpaidAccountName_(\d+)$/', $fieldName, $matches)) {
+                                                $unpaidAccountNames[$matches[1]] = $fieldValue;
+                                            }
+                                        }
+                                        foreach ($unpaidAccountNames as $accountIndex => $accountName) {
+                                            $amountField = $accountIndex === "" ? "unpaidAccountAmount" : "unpaidAccountAmount_" . $accountIndex;
+                                            $noteField = $accountIndex === "" ? "unpaidAccountNote" : "unpaidAccountNote_" . $accountIndex;
+                                            $accountName = trim((string) $accountName);
+                                            $accountAmount = (float) str_replace(",", "", (string) ($dayPayload[$amountField] ?? 0));
+                                            $accountNote = $dayPayload[$noteField] ?? "";
+                                            if ($accountName !== "" && $accountAmount > 0 && !$isPaidNote($accountNote)) {
+                                                $unpaidKey = "account:" . strtolower($accountName);
+                                                $dailyUnpaidAccounts[$unpaidKey] = [
+                                                    "name" => $accountName,
+                                                    "amount" => ($dailyUnpaidAccounts[$unpaidKey]["amount"] ?? 0) + $accountAmount
+                                                ];
+                                            }
+                                        }
+                                    }
                                 }
                                 $detailsId = "details-" . preg_replace("/[^0-9]/", "", $report["report_date"]);
                                 ?>
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-5 py-4 font-semibold">
-                                       <?= date("l", strtotime($report["report_date"])) ?>
+                                
+                                <!-- Main Report Row -->
+                                <tr class="daily-report-row hover:bg-gray-50/80 transition-colors group"
+                                    data-details-target="<?= htmlspecialchars($detailsId) ?>">
+                                    <td class="px-6 py-4 font-semibold text-gray-900">
+                                        <?= date("l", strtotime($report["report_date"])) ?>
                                     </td>
-                                    <td class="px-5 py-4">
+                                    <td class="px-6 py-4 text-gray-500 font-medium">
                                         <?= date("F j, Y", strtotime($report["report_date"])) ?>
                                     </td>
-                                    <td class="px-5 py-4">
-                                        <?= htmlspecialchars($report["shift_name"]) ?>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <?= (int) $report["total_tables"] ?>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <?= (int) $report["total_pax"] ?>
-                                    </td>
-                                    <td class="px-5 py-4 font-semibold">
-                                        <?= peso((float) $report["gross"]) ?>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <span class="px-2.5 py-1 rounded-full text-xs font-medium bg-yellow-50 text-yellow-700">
-                                            <?= htmlspecialchars(ucfirst($report["status"])) ?>
+                                    <td class="px-6 py-4">
+                                        <span class="inline-flex items-center px-2.5 py-1 rounded-md text-[11px] font-medium bg-gray-100 text-gray-700">
+                                            <?= htmlspecialchars($report["shift_name"]) ?>
                                         </span>
                                     </td>
-                                    <td class="px-5 py-4">
-                                        <button type="button"
-                                                class="summary-details-button px-3 py-1.5 text-blue-700 bg-blue-50 rounded-lg font-medium hover:bg-blue-100"
-                                                data-target="<?= htmlspecialchars($detailsId) ?>"
-                                                aria-expanded="false">
-                                            See Details
-                                        </button>
+                                    <td class="px-6 py-4 font-medium">
+                                        <?= (int) $report["total_tables"] ?>
                                     </td>
-                                </tr>
-                                <tr id="<?= htmlspecialchars($detailsId) ?>" class="hidden bg-gray-50">
-                                    <td colspan="8" class="px-5 py-5">
-                                        <div class="bg-white border rounded-xl p-4">
-                                            <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                                                <div>
-                                                    <p class="font-semibold">Lunch + Closing Combined</p>
-                                                    <p class="text-xs text-gray-500"><?= count($dayDetails) ?> report<?= count($dayDetails) === 1 ? "" : "s" ?> combined</p>
-                                                </div>
-                                                <p class="font-semibold"><?= peso((float) $report["pos_sales_total"]) ?></p>
-                                            </div>
-                                            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                                                <?php foreach ($combinedDetailFields as $fieldName => $fieldValue): ?>
-                                                    <div class="border rounded-lg p-2">
-                                                        <p class="text-xs text-gray-500">
-                                                            <?= htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName))) ?>
-                                                        </p>
-                                                        <p class="text-sm font-medium mt-1"><?= peso((float) $fieldValue) ?></p>
+                                    <td class="px-6 py-4 font-medium">
+                                        <?= (int) $report["total_pax"] ?>
+                                    </td>
+                                    <td class="px-6 py-4 font-medium text-gray-900">
+                                        <?= peso((float) ($combinedDetailFields["barSale"] ?? 0)) ?>
+                                    </td>
+                                    <td class="px-6 py-4 font-medium text-gray-900">
+                                        <?= peso((float) ($combinedDetailFields["kitchenSale"] ?? 0)) ?>
+                                    </td>
+                                    <td class="px-6 py-4 font-bold text-gray-900">
+                                        <?= peso((float) $report["telegram_declared_total"]) ?>
+                                    </td>
+                                    <td class="px-6 py-4 min-w-[220px]">
+                                        <?php if (empty($dailyUnpaidAccounts)): ?>
+                                            <span class="text-gray-400">-</span>
+                                        <?php else: ?>
+                                            <div class="space-y-1.5">
+                                                <?php foreach ($dailyUnpaidAccounts as $unpaidAccount): ?>
+                                                    <div class="flex items-start justify-between gap-3">
+                                                        <span class="text-gray-700 break-words"><?= htmlspecialchars($unpaidAccount["name"]) ?></span>
+                                                        <span class="shrink-0 font-semibold text-amber-800"><?= peso((float) $unpaidAccount["amount"]) ?></span>
                                                     </div>
                                                 <?php endforeach; ?>
                                             </div>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-6 py-4 text-right">
+                                        <button type="button"
+                                                class="summary-details-button inline-flex items-center gap-1.5 px-3 py-1.5 text-blue-600 bg-blue-50/80 hover:bg-blue-100 rounded-lg font-semibold transition-all shadow-2xs"
+                                                data-target="<?= htmlspecialchars($detailsId) ?>"
+                                                aria-expanded="false">
+                                            <span>See Details</span>
+                                            <svg class="w-3.5 h-3.5 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                                            </svg>
+                                        </button>
+                                    </td>
+                                </tr>
+
+                                <!-- Expandable Sub-Row -->
+                                <tr id="<?= htmlspecialchars($detailsId) ?>" class="hidden bg-gray-50/50 border-t border-gray-100">
+                                    <td colspan="10" class="px-6 py-5">
+                                        <div class="bg-white border border-gray-200/80 rounded-xl p-5 shadow-xs">
+                                            
+                                            <!-- Header Breakdown & Live Search Filter -->
+                                            <div class="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3 border-b border-gray-100">
+                                                <div>
+                                                    <p class="font-bold text-gray-900 text-sm">Lunch + Closing Combined</p>
+                                                    <p class="text-xs text-gray-400 mt-0.5"><?= count($dayDetails) ?> report<?= count($dayDetails) === 1 ? "" : "s" ?> combined</p>
+                                                </div>
+                                                
+                                                <div class="flex items-center gap-3 flex-wrap">
+                                                    <!-- Live Search Input -->
+                                                    <div class="relative">
+                                                        <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-gray-400">
+                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                                            </svg>
+                                                        </span>
+                                                        <input type="text" 
+                                                            id="search-details-<?= htmlspecialchars($detailsId) ?>" 
+                                                            onkeyup="filterReportDetails('<?= htmlspecialchars($detailsId) ?>')" 
+                                                            placeholder="Filter details..." 
+                                                            class="pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all w-40 sm:w-48">
+                                                    </div>
+
+                                                    <div class="text-right">
+                                                        <span class="text-[10px] uppercase font-bold tracking-wider text-gray-400 block">POS Total</span>
+                                                        <span class="font-bold text-gray-900 text-sm"><?= peso((float) $report["pos_sales_total"]) ?></span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Combined Fields Grid -->
+                                            <div id="grid-container-<?= htmlspecialchars($detailsId) ?>" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                                <?php foreach ($combinedDetailFields as $fieldName => $fieldValue): ?>
+                                                    <div class="detail-card border border-gray-100 rounded-lg p-3 bg-gray-50/40 hover:bg-white hover:border-gray-200 transition-all shadow-2xs" 
+                                                        data-search-text="<?= strtolower(htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName)) . ' ' . $fieldValue)) ?>">
+                                                        <p class="text-[11px] font-medium text-gray-400 uppercase tracking-wide">
+                                                            <?= htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName))) ?>
+                                                        </p>
+                                                        <p class="text-sm font-semibold text-gray-900 mt-1">
+                                                            <?= peso((float) $fieldValue) ?>
+                                                        </p>
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+
                                         </div>
                                     </td>
                                 </tr>
@@ -558,6 +683,28 @@ function peso(float $amount): string {
                 </table>
             </div>
         </section>
+
+<!-- Filter Script Helper -->
+<script>
+function filterReportDetails(detailsId) {
+    const input = document.getElementById('search-details-' + detailsId);
+    const filter = input.value.toLowerCase().trim();
+    const container = document.getElementById('grid-container-' + detailsId);
+    
+    if (!container) return;
+    
+    const cards = container.getElementsByClassName('detail-card');
+    
+    for (let i = 0; i < cards.length; i++) {
+        const searchText = cards[i].getAttribute('data-search-text') || '';
+        if (searchText.includes(filter)) {
+            cards[i].style.display = "";
+        } else {
+            cards[i].style.display = "none";
+        }
+    }
+}
+</script>
     </main>
 
     <script>
@@ -568,6 +715,24 @@ function peso(float $amount): string {
 
         const dailyChartData = <?= json_encode($dailyChart, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
         const dailyGrossChart = document.getElementById("dailyGrossChart");
+        const dailyGrossChartViewport = document.getElementById("dailyGrossChartViewport");
+        const dailyGrossChartInner = document.getElementById("dailyGrossChartInner");
+        let dailyGrossChartInstance = null;
+
+        function sizeDailyGrossChart() {
+            if (!dailyGrossChartViewport || !dailyGrossChartInner || !dailyChartData.labels.length) {
+                return;
+            }
+
+            const viewportWidth = dailyGrossChartViewport.clientWidth;
+            const visiblePointCount = Math.min(7, dailyChartData.labels.length);
+            const pointWidth = viewportWidth / visiblePointCount;
+            dailyGrossChartInner.style.width = `${Math.max(viewportWidth, pointWidth * dailyChartData.labels.length)}px`;
+
+            if (dailyGrossChartInstance) {
+                dailyGrossChartInstance.resize();
+            }
+        }
 
         function pesoValue(value) {
             return "₱" + Number(value).toLocaleString("en-PH", {
@@ -577,7 +742,8 @@ function peso(float $amount): string {
         }
 
         if (dailyGrossChart && dailyChartData.labels.length) {
-            new Chart(dailyGrossChart, {
+            sizeDailyGrossChart();
+            dailyGrossChartInstance = new Chart(dailyGrossChart, {
                 type: "line",
                 data: {
                     labels: dailyChartData.labels,
@@ -619,6 +785,10 @@ function peso(float $amount): string {
                     }
                 }
             });
+            window.addEventListener("resize", sizeDailyGrossChart);
+            requestAnimationFrame(() => {
+                dailyGrossChartViewport.scrollLeft = dailyGrossChartViewport.scrollWidth;
+            });
         }
 
         document.querySelectorAll(".summary-details-button").forEach(button => {
@@ -629,6 +799,52 @@ function peso(float $amount): string {
                 button.textContent = isHidden ? "See Details" : "Hide Details";
             });
         });
+
+        const dailyReportSearch = document.getElementById("dailyReportSearch");
+        const dailyReportTableBody = document.getElementById("dailyReportTableBody");
+        const dailyReportCount = document.getElementById("dailyReportCount");
+
+        if (dailyReportSearch && dailyReportTableBody) {
+            dailyReportSearch.addEventListener("input", () => {
+                const searchValue = dailyReportSearch.value.trim().toLowerCase();
+                const reportRows = dailyReportTableBody.querySelectorAll(".daily-report-row");
+                let visibleCount = 0;
+
+                reportRows.forEach(row => {
+                    const detailsRow = document.getElementById(row.dataset.detailsTarget);
+                    const searchableText = `${row.textContent} ${detailsRow ? detailsRow.textContent : ""}`.toLowerCase();
+                    const matches = searchValue === "" || searchableText.includes(searchValue);
+                    row.classList.toggle("hidden", !matches);
+
+                    if (detailsRow) {
+                        const detailsButton = row.querySelector(".summary-details-button");
+                        const isExpanded = detailsButton && detailsButton.getAttribute("aria-expanded") === "true";
+                        detailsRow.classList.toggle("hidden", !matches || !isExpanded);
+                    }
+
+                    if (matches) {
+                        visibleCount++;
+                    }
+                });
+
+                if (dailyReportCount) {
+                    dailyReportCount.textContent = String(visibleCount);
+                }
+
+                let noResultsRow = document.getElementById("noDailyReportResults");
+                if (visibleCount === 0 && reportRows.length > 0) {
+                    if (!noResultsRow) {
+                        noResultsRow = document.createElement("tr");
+                        noResultsRow.id = "noDailyReportResults";
+                        noResultsRow.innerHTML = '<td colspan="10" class="px-6 py-8 text-center text-gray-500">No reports match your search.</td>';
+                        dailyReportTableBody.appendChild(noResultsRow);
+                    }
+                    noResultsRow.classList.remove("hidden");
+                } else if (noResultsRow) {
+                    noResultsRow.classList.add("hidden");
+                }
+            });
+        }
     </script>
 
     <?php include "../Components/footer.php"; ?>

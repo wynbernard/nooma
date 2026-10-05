@@ -222,6 +222,7 @@
 
 </header>
 
+<?php include __DIR__ . "/alert.php"; ?>
 
 <script>
 

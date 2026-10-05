@@ -1,17 +1,21 @@
 function formatAmount(value) {
-  value = value.replace(/,/g, "").replace(/[^\d.]/g, "");
+  const raw = String(value || "").replace(/,/g, "");
+  const isNegative = raw.startsWith("-");
+  let sanitized = raw.replace(/-/g, "").replace(/[^\d.]/g, "");
 
-  if (!value) {
+  if (!sanitized) {
     return "";
   }
 
-  let number = parseFloat(value);
+  let number = parseFloat(sanitized);
 
   if (isNaN(number)) {
     return "";
   }
 
-  return number.toLocaleString("en-PH", {
+  const signedNumber = isNegative ? -number : number;
+
+  return signedNumber.toLocaleString("en-PH", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
@@ -130,7 +134,7 @@ function removeOwner(button) {
 
   // Don't allow all owners to be removed
   if (rows.length <= 1) {
-    alert("At least one owner is required.");
+    window.showToast("At least one owner is required.", "error");
 
     return;
   }

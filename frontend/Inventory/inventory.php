@@ -949,9 +949,7 @@ async function showSelectedFile(file) {
             .pop()
             .toLowerCase();
     if (!allowedExtensions.includes(extension)) {
-        alert(
-            "Please select an XLSX or CSV file."
-        );
+        window.showToast("Please select an XLSX or CSV file.", "error");
         inventoryFile.value = "";
         selectedFileContainer.classList.add(
             "hidden"
@@ -989,7 +987,7 @@ async function showSelectedFile(file) {
         if (inventoryFile.files[0] !== file) {
             return;
         }
-        alert(error.message || "Could not read the sales report.");
+        window.showToast(error.message || "Could not read the sales report.", "error");
         uploadButton.disabled = true;
         uploadButton.textContent = "Compare Daily Totals";
     }
@@ -1079,9 +1077,7 @@ inventoryUploadForm.addEventListener(
     "submit",
     function () {
         if (!inventoryFile.files.length) {
-            alert(
-                "Please select an inventory file."
-            );
+            window.showToast("Please select an inventory file.", "error");
             return;
         }
         uploadButton.disabled = true;
@@ -1300,7 +1296,7 @@ inventoryUploadForm.addEventListener("submit", async function (event) {
         document.getElementById("dailyTotalsJson").value = JSON.stringify(dailyTotals);
         inventoryUploadForm.submit();
     } catch (error) {
-        alert(error.message || "Could not read the sales report.");
+        window.showToast(error.message || "Could not read the sales report.", "error");
         uploadButton.disabled = false;
         uploadButton.textContent = "Compare Daily Totals";
     }

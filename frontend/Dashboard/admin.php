@@ -107,14 +107,18 @@ foreach ($dashboardReports as &$report) {
         + (float) ($dashboardOwners[(int) $report["report_id"]] ?? 0.0);
     $nonPosSales = $channel === "NON POS" ? (float) $report["telegram_declared_total"] : 0.0;
     $grabNet = $dashboardMoney($payload["onlineTips"] ?? 0);
+    $report["sale_channel"] = $channel;
+    $report["non_pos_sales_total"] = $nonPosSales;
     $report["gross_sale_total"] = $posSales + $nonPosSales + $grabNet;
 }
 unset($report);
 
-$dashboardTotalSales = array_sum(array_map(static fn (array $row): float => (float) $row["gross_sale_total"], $dashboardReports));
+$dashboardTotalSales = array_sum(array_map(static fn (array $row): float => (float) $row["telegram_declared_total"], $dashboardReports));
 $dashboardTransactions = count($dashboardReports);
 $dashboardNetSales = array_sum(array_map(static fn (array $row): float => (float) $row["pos_sales_total"], $dashboardReports));
 $dashboardAverageSale = $dashboardTransactions > 0 ? $dashboardTotalSales / $dashboardTransactions : 0.0;
+$dashboardNonPosSales = array_sum(array_map(static fn (array $row): float => (float) $row["non_pos_sales_total"], $dashboardReports));
+$dashboardNonPosTransactions = count(array_filter($dashboardReports, static fn (array $row): bool => $row["sale_channel"] === "NON POS"));
 $today = date("Y-m-d");
 $dashboardTodayReports = array_filter($dashboardReports, static fn (array $row): bool => $row["report_date"] === $today);
 $dashboardTodaySales = array_sum(array_map(static fn (array $row): float => (float) $row["gross_sale_total"], $dashboardTodayReports));
@@ -220,255 +224,188 @@ $dashboardChartData = [
     <!-- CONTENT -->
 
     <main class="p-6">
-
-        <!-- PUT YOUR DASHBOARD CONTENT HERE -->
-
-        <!-- Welcome -->
-        <div
-            class="bg-blue-600 rounded-2xl p-6 md:p-8
-                   text-white mb-6"
-        >
-
-            <p class="text-blue-100 text-sm">
-                Welcome back,
-            </p>
-
-            <h2 class="text-3xl font-bold mt-1">
-                <?= htmlspecialchars($full_name) ?>
-            </h2>
-
-            <p class="text-blue-100 mt-2">
-                Here's what's happening with your business today.
-            </p>
-
-        </div>
-
-
        <!-- STATISTICS -->
-<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
 
-    <!-- Total Sales -->
-    <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-sm font-medium text-gray-500">
-                    Total Sales
-                </p>
+            <!-- Total Sales -->
+            <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">
+                            Total Sales
+                        </p>
 
-                <h3 class="text-2xl font-bold text-gray-900 mt-2">
-                    ₱<?= number_format($dashboardTotalSales, 2) ?>
-                </h3>
+                        <h3 class="text-2xl font-bold text-gray-900 mt-2">
+                            ₱<?= number_format($dashboardTotalSales, 2) ?>
+                        </h3>
 
-                <p class="text-sm text-green-600 mt-2">
-                    All recorded sales
-                </p>
+                        <p class="text-sm text-green-600 mt-2">
+                            All recorded sales
+                        </p>
+                    </div>
+
+                    <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                        <svg class="w-6 h-6 text-blue-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.657 0 3 .895 3 2m-3-2V6m0 12v-2m0 0c-1.657 0-3-.895-3-2m3 2c1.657 0 3-.895 3-2m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                </div>
             </div>
 
-            <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                <svg class="w-6 h-6 text-blue-600"
-                     fill="none"
-                     stroke="currentColor"
-                     viewBox="0 0 24 24">
-                    <path stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.657 0 3 .895 3 2m-3-2V6m0 12v-2m0 0c-1.657 0-3-.895-3-2m3 2c1.657 0 3-.895 3-2m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-            </div>
-        </div>
-    </div>
 
+            <!-- Total Transactions -->
+            <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">
+                            Total Transactions
+                        </p>
 
-    <!-- Total Transactions -->
-    <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-sm font-medium text-gray-500">
-                    Total Transactions
-                </p>
+                        <h3 class="text-2xl font-bold text-gray-900 mt-2">
+                            <?= number_format($dashboardTransactions) ?>
+                        </h3>
 
-                <h3 class="text-2xl font-bold text-gray-900 mt-2">
-                    <?= number_format($dashboardTransactions) ?>
-                </h3>
+                        <p class="text-sm text-green-600 mt-2">
+                            Non-voided reports
+                        </p>
+                    </div>
 
-                <p class="text-sm text-green-600 mt-2">
-                    Non-voided reports
-                </p>
-            </div>
-
-            <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
-                <svg class="w-6 h-6 text-green-600"
-                     fill="none"
-                     stroke="currentColor"
-                     viewBox="0 0 24 24">
-                    <path stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a3 3 0 006 0M9 5h6M9 13h6M9 17h4" />
-                </svg>
-            </div>
-        </div>
-    </div>
-
-
-    <!-- Net Sales -->
-    <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-sm font-medium text-gray-500">
-                    Net Sales
-                </p>
-
-                <h3 class="text-2xl font-bold text-gray-900 mt-2">
-                    ₱<?= number_format($dashboardNetSales, 2) ?>
-                </h3>
-
-                <p class="text-sm text-green-600 mt-2">
-                    POS sales total
-                </p>
+                    <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center">
+                        <svg class="w-6 h-6 text-green-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a3 3 0 006 0M9 5h6M9 13h6M9 17h4" />
+                        </svg>
+                    </div>
+                </div>
             </div>
 
-            <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                <svg class="w-6 h-6 text-purple-600"
-                     fill="none"
-                     stroke="currentColor"
-                     viewBox="0 0 24 24">
-                    <path stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                </svg>
+
+            <!-- Net Sales -->
+            <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">
+                            Net Sales
+                        </p>
+
+                        <h3 class="text-2xl font-bold text-gray-900 mt-2">
+                            ₱<?= number_format($dashboardNetSales, 2) ?>
+                        </h3>
+
+                        <p class="text-sm text-green-600 mt-2">
+                            POS sales total
+                        </p>
+                    </div>
+
+                    <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
+                        <svg class="w-6 h-6 text-purple-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                        </svg>
+                    </div>
+                </div>
+            </div>
+
+
+            <!-- Non-POS Sales -->
+            <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">
+                            Non-POS Sales
+                        </p>
+
+                        <h3 class="text-2xl font-bold text-gray-900 mt-2">
+                            ₱<?= number_format($dashboardNonPosSales, 2) ?>
+                        </h3>
+
+                        <p class="text-sm text-orange-600 mt-2">
+                            <?= number_format($dashboardNonPosTransactions) ?> non-POS reports
+                        </p>
+                    </div>
+
+                    <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
+                        <svg class="w-6 h-6 text-orange-600"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24">
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M12 8v8m-4-4h8m5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
 
+        <!-- SALES OVERVIEW -->
+        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-xs hover:shadow-md transition-all duration-200 mb-6">
 
-    <!-- Average Sale -->
-    <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
-        <div class="flex items-center justify-between">
-            <div>
-                <p class="text-sm font-medium text-gray-500">
-                    Average Sale
-                </p>
+            <!-- Header Section -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                <div>
+                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                        Performance Analytics
+                    </p>
+                    <h3 class="text-lg font-bold text-gray-900 tracking-tight mt-0.5">
+                        Total Gross
+                    </h3>
+                    <p class="text-sm text-gray-500 mt-0.5">
+                        Showing 7 data points per view — scroll sideways for more
+                    </p>
+                </div>
 
-                <h3 class="text-2xl font-bold text-gray-900 mt-2">
-                    ₱<?= number_format($dashboardAverageSale, 2) ?>
-                </h3>
-
-                <p class="text-sm text-green-600 mt-2">
-                    Average per report
-                </p>
+                <!-- Range Selector -->
+                <div class="relative inline-block">
+                    <select 
+                        id="salesGraphRange" 
+                        aria-label="Sales graph range"
+                        class="appearance-none bg-blue-50/80 border border-blue-200/60 rounded-xl px-4 py-2 pr-9 text-xs font-semibold text-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all cursor-pointer"
+                    >
+                        <option value="daily">Daily</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="monthly" selected>Monthly</option>
+                    </select>
+                    <!-- Custom Select Chevron Arrow -->
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-blue-600">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
+                </div>
             </div>
 
-            <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center">
-                <svg class="w-6 h-6 text-orange-600"
-                     fill="none"
-                     stroke="currentColor"
-                     viewBox="0 0 24 24">
-                    <path stroke-linecap="round"
-                          stroke-linejoin="round"
-                          stroke-width="2"
-                          d="M12 8v8m-4-4h8m5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+            <!-- Scrollable Viewport Wrapper -->
+            <div class="relative w-full overflow-x-auto pb-3 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+                <!-- Inner container width scales dynamically so exactly ~7 items fit comfortably in view -->
+                <div id="chartContainerInner" class="relative h-72">
+                    <canvas id="salesOverviewChart"></canvas>
+                </div>
             </div>
+
+            <div class="flex items-center justify-between text-[11px] text-gray-400 pt-2 border-t border-gray-100 mt-2">
+                <span>💡 Tip: Drag or scroll horizontally inside the chart area to view more data.</span>
+                <span class="hidden sm:inline">Showing scrollable window</span>
+            </div>
+
         </div>
-    </div>
-
-</div>
-
-<!-- SALES OVERVIEW -->
-<div class="bg-white border border-gray-200 rounded-2xl shadow-sm p-6 mb-6">
-
-    <div class="flex items-center justify-between mb-5">
-        <div>
-            <h3 class="text-lg font-bold text-gray-900">
-                Total Gross
-            </h3>
-
-                <p class="text-sm text-gray-500 mt-1">
-                    Total gross by day, week, or month
-            </p>
-        </div>
-
-        <select id="salesGraphRange" aria-label="Sales graph range"
-                class="border rounded-xl px-3 py-2 text-sm font-semibold text-blue-700 bg-blue-50">
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-            <option value="monthly" selected>Monthly</option>
-        </select>
-    </div>
-
-
-    <div class="relative h-72">
-        <canvas id="salesOverviewChart"></canvas>
-    </div>
-
-    <!-- Static bars retained only as a no-script fallback. -->
-    <div class="hidden flex items-end justify-between h-64 gap-3">
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 35%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Jan</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 48%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Feb</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 42%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Mar</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 58%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Apr</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 65%;"></div>
-            <span class="text-xs text-gray-500 mt-2">May</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 55%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Jun</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 72%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Jul</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 78%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Aug</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 88%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Sep</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 68%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Oct</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 82%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Nov</span>
-        </div>
-
-        <div class="flex flex-col items-center flex-1 h-full justify-end">
-            <div class="w-full bg-blue-500 rounded-t-lg" style="height: 95%;"></div>
-            <span class="text-xs text-gray-500 mt-2">Dec</span>
-        </div>
-
-    </div>
-
-</div>
 
 
 <!-- RECENT TRANSACTIONS -->
@@ -666,6 +603,8 @@ $dashboardChartData = [
 const dashboardChartData = <?= json_encode($dashboardChartData, JSON_UNESCAPED_SLASHES) ?>;
 const salesGraphRange = document.getElementById("salesGraphRange");
 const salesOverviewChart = document.getElementById("salesOverviewChart");
+const chartContainerInner = document.getElementById("chartContainerInner");
+const scrollableWrapper = chartContainerInner.parentElement; // The scrollable container div
 
 function pesoValue(value) {
     return "₱" + Number(value).toLocaleString("en-PH", {
@@ -680,9 +619,22 @@ function renderSalesChart(range) {
         return;
     }
 
+    const totalItems = selectedData.labels.length;
+    
+    // Allocate ~95px per item to allow horizontal scrolling
+    const pixelWidthPerItem = 95;
+    const calculatedWidth = Math.max(700, totalItems * pixelWidthPerItem);
+    
+    chartContainerInner.style.width = calculatedWidth + "px";
+
     if (window.salesChart) {
         window.salesChart.destroy();
     }
+
+    const ctx = salesOverviewChart.getContext("2d");
+    const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+    gradient.addColorStop(0, "rgba(79, 70, 229, 0.18)");
+    gradient.addColorStop(1, "rgba(79, 70, 229, 0.0)");
 
     window.salesChart = new Chart(salesOverviewChart, {
         type: "line",
@@ -691,35 +643,80 @@ function renderSalesChart(range) {
             datasets: [{
                 label: "Total Gross",
                 data: selectedData.values,
-                borderColor: "#2563eb",
-                backgroundColor: "rgba(37, 99, 235, 0.12)",
-                borderWidth: 3,
+                borderColor: "#4f46e5",
+                backgroundColor: gradient,
+                borderWidth: 2.5,
                 pointBackgroundColor: "#ffffff",
-                pointBorderColor: "#2563eb",
+                pointBorderColor: "#4f46e5",
                 pointBorderWidth: 2,
                 pointRadius: 4,
-                tension: 0.35,
+                pointHoverRadius: 6,
+                pointHoverBorderWidth: 3,
+                tension: 0.38,
                 fill: true
             }]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: { mode: "index", intersect: false },
+            interaction: { 
+                mode: "index", 
+                intersect: false 
+            },
             plugins: {
-                legend: { position: "bottom" },
-                tooltip: { callbacks: { label: context => "Total Gross: " + pesoValue(context.raw) } }
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: "rgba(15, 23, 42, 0.9)",
+                    titleColor: "#f8fafc",
+                    bodyColor: "#e2e8f0",
+                    titleFont: { size: 12, weight: "600", family: "inherit" },
+                    bodyFont: { size: 12, weight: "500", family: "inherit" },
+                    padding: 12,
+                    boxWidth: 8,
+                    boxHeight: 8,
+                    usePointStyle: true,
+                    borderColor: "rgba(255, 255, 255, 0.1)",
+                    borderWidth: 1,
+                    callbacks: {
+                        label: function(context) {
+                            return " Total Gross: " + pesoValue(context.raw);
+                        }
+                    }
+                }
             },
             scales: {
                 y: {
                     beginAtZero: true,
-                    ticks: { callback: value => pesoValue(value) },
-                    grid: { color: "rgba(148, 163, 184, 0.2)" }
+                    ticks: { 
+                        callback: value => pesoValue(value),
+                        font: { size: 11, family: "inherit" },
+                        color: "#94a3b8",
+                        padding: 8
+                    },
+                    grid: { 
+                        color: "rgba(226, 232, 240, 0.8)",
+                        drawBorder: false
+                    },
+                    border: { display: false }
                 },
-                x: { grid: { display: false } }
+                x: { 
+                    grid: { display: false },
+                    ticks: {
+                        font: { size: 11, family: "inherit" },
+                        color: "#94a3b8",
+                        padding: 8,
+                        maxRotation: 0
+                    },
+                    border: { display: false }
+                }
             }
         }
     });
+
+    // Automatically scroll to the far right to show the latest data points immediately
+    setTimeout(() => {
+        scrollableWrapper.scrollLeft = scrollableWrapper.scrollWidth;
+    }, 50);
 }
 
 salesGraphRange.addEventListener("change", event => renderSalesChart(event.target.value));

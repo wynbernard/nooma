@@ -1,3 +1,8 @@
+<?php
+session_start();
+$error = $_SESSION["login_error"] ?? "";
+unset($_SESSION["login_error"]);
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,6 +16,8 @@
 </head>
 
 <body class="min-h-screen bg-gray-50">
+
+    <?php include __DIR__ . "/../Components/alert.php"; ?>
 
     <div class="min-h-screen flex">
 
@@ -127,16 +134,10 @@
                 </div>
 
 
-                <!-- ERROR -->
-                <?php if (!empty($error)): ?>
-
-                    <div class="mt-6 p-4 bg-red-50 border border-red-200
-                                text-red-700 rounded-xl text-sm">
-
-                        <?= htmlspecialchars($error) ?>
-
-                    </div>
-
+                <?php if ($error !== ""): ?>
+                    <script>
+                        window.showToast(<?= json_encode($error, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>, "error");
+                    </script>
                 <?php endif; ?>
 
 
