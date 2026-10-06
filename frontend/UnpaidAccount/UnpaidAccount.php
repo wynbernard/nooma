@@ -108,77 +108,105 @@ if ($ownerNamesResult) {
 
         <div class="bg-white border-2 border-gray-800 shadow-sm overflow-hidden">
             <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="bg-blue-100 border-b-2 border-gray-800">
-                            <th class="px-5 py-3 text-left">Date</th>
-                            <th class="px-5 py-3 text-left">Shift</th>
-                            <th class="px-5 py-3 text-left">Account Type</th>
-                            <th class="px-5 py-3 text-left">Account Name</th>
-                            <th class="px-5 py-3 text-right">Amount</th>
-                            <th class="px-5 py-3 text-left">Notes</th>
-                            <th class="px-5 py-3 text-center">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php if (empty($unpaidAccounts)): ?>
-                            <tr>
-                                <td colspan="8" class="px-5 py-8 text-center text-gray-500">
-                                    No unpaid accounts found.
-                                </td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($unpaidAccounts as $account): ?>
-                                <tr class="border-b border-gray-200 hover:bg-gray-50">
-                                    <td class="px-5 py-4">
-                                        <?= date("F d, Y", strtotime($account["report_date"])) ?>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <?= htmlspecialchars($account["shift_name"]) ?>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <span class="px-2 py-1 rounded text-xs font-medium 
-                                            <?= $account["account_type"] === "owner" ? "bg-purple-100 text-purple-800" : "bg-orange-100 text-orange-800" ?>">
-                                            <?= ucfirst($account["account_type"]) ?>
-                                        </span>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <?php if ($account["account_type"] === "owner"): ?>
-                                            <?= htmlspecialchars($ownerAccountNames[$account["account_id"]] ?? "Owner account #" . $account["account_id"]) ?>
-                                        <?php else: ?>
-                                            <?= htmlspecialchars($account["account_name"]) ?>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="px-5 py-4 text-right font-semibold">
-                                        ₱<?= number_format($account["amount"], 2) ?>
-                                    </td>
-                                    <td class="px-5 py-4">
-                                        <?php if ($account["account_type"] === "owner"): ?>
-                                            <?= htmlspecialchars($account["note"]) ?>
-                                        <?php else: ?>
-                                            -
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="px-5 py-4 text-center">
-                                        <button 
-                                            type="button"
-                                            class="mark-as-paid px-3 py-1.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700"
-                                            data-report-id="<?= (int) $account["report_id"] ?>"
-                                            data-account-type="<?= htmlspecialchars($account["account_type"]) ?>"
-                                            <?php if ($account["account_type"] === "owner"): ?>
-                                                data-account-id="<?= (int) $account["account_id"] ?>"
-                                            <?php else: ?>
-                                                data-field-index="<?= htmlspecialchars($account["field_index"]) ?>"
-                                            <?php endif; ?>
-                                        >
-                                            Mark as Paid
-                                        </button>
-                                    </td>
-                                </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
-                </table>
+                <table class="w-full text-left border-collapse">
+        <thead>
+            <tr class="bg-slate-900 text-white text-xs font-semibold tracking-wider uppercase">
+                <th class="px-6 py-4">Date</th>
+                <th class="px-6 py-4">Shift</th>
+                <th class="px-6 py-4">Account Type</th>
+                <th class="px-6 py-4">Account Name</th>
+                <th class="px-6 py-4 text-right">Amount</th>
+                <th class="px-6 py-4">Notes</th>
+                <th class="px-6 py-4 text-center">Actions</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
+            <?php if (empty($unpaidAccounts)): ?>
+                <tr>
+                    <td colspan="7" class="px-6 py-12 text-center">
+                        <div class="flex flex-col items-center justify-center space-y-3">
+                            <div class="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                </svg>
+                            </div>
+                            <p class="text-sm font-medium text-slate-500">No unpaid accounts found.</p>
+                        </div>
+                    </td>
+                </tr>
+            <?php else: ?>
+                <?php foreach ($unpaidAccounts as $account): ?>
+                    <tr class="transition-colors hover:bg-slate-50/80 group">
+                        <!-- Date -->
+                        <td class="px-6 py-4 font-medium text-slate-900 whitespace-nowrap">
+                            <?= date("F d, Y", strtotime($account["report_date"])) ?>
+                        </td>
+
+                        <!-- Shift -->
+                        <td class="px-6 py-4 text-slate-600 whitespace-nowrap">
+                            <?= htmlspecialchars($account["shift_name"]) ?>
+                        </td>
+
+                        <!-- Account Type Badge -->
+                        <td class="px-6 py-4 whitespace-nowrap">
+                            <?php if ($account["account_type"] === "owner"): ?>
+                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-50 text-purple-700 border border-purple-200/60">
+                                    Owner
+                                </span>
+                            <?php else: ?>
+                                <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200/60">
+                                    <?= ucfirst($account["account_type"]) ?>
+                                </span>
+                            <?php endif; ?>
+                        </td>
+
+                        <!-- Account Name -->
+                        <td class="px-6 py-4 font-medium text-slate-900">
+                            <?php if ($account["account_type"] === "owner"): ?>
+                                <?= htmlspecialchars($ownerAccountNames[$account["account_id"]] ?? "Owner account #" . $account["account_id"]) ?>
+                            <?php else: ?>
+                                <?= htmlspecialchars($account["account_name"]) ?>
+                            <?php endif; ?>
+                        </td>
+
+                        <!-- Amount -->
+                        <td class="px-6 py-4 text-right font-bold text-slate-900 whitespace-nowrap">
+                            ₱<?= number_format($account["amount"], 2) ?>
+                        </td>
+
+                        <!-- Notes -->
+                        <td class="px-6 py-4 text-slate-600 max-w-xs truncate">
+                            <?php if ($account["account_type"] === "owner" && !empty($account["note"])): ?>
+                                <?= htmlspecialchars($account["note"]) ?>
+                            <?php else: ?>
+                                <span class="text-slate-300">-</span>
+                            <?php endif; ?>
+                        </td>
+
+                        <!-- Actions -->
+                        <td class="px-6 py-4 text-center whitespace-nowrap">
+                            <button 
+                                type="button"
+                                class="inline-flex items-center justify-center px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-sm hover:shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 active:scale-95"
+                                data-report-id="<?= (int) $account["report_id"] ?>"
+                                data-account-type="<?= htmlspecialchars($account["account_type"]) ?>"
+                                <?php if ($account["account_type"] === "owner"): ?>
+                                    data-account-id="<?= (int) $account["account_id"] ?>"
+                                <?php else: ?>
+                                    data-field-index="<?= htmlspecialchars($account["field_index"]) ?>"
+                                <?php endif; ?>
+                            >
+                                <svg class="w-3.5 h-3.5 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                                Mark as Paid
+                            </button>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            <?php endif; ?>
+        </tbody>
+    </table>
             </div>
         </div>
     </main>

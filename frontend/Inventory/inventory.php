@@ -30,7 +30,7 @@ $username = $_SESSION["username"] ?? "admin";
 // ============================================================
 
 $page_title = "Sales Comparison";
-$page_description = "Compare StoreHub daily sales with Nooma Total Sales";
+$page_description = "Compare StoreHub totals and adjustments with Nooma";
 
 
 require_once __DIR__ . "/../../backend/config/database.php";
@@ -79,7 +79,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                 Sales Comparison
             </h1>
             <p class="text-sm text-gray-500 mt-1">
-                Compare Excel product sales with Nooma Total Sale by date or report range.
+                Compare Grand Total, Total Discount, and Service Charge with Nooma by date or report range.
             </p>
             <?php if ($comparisonError !== ""): ?>
                 <p class="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
@@ -359,14 +359,16 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
         <div id="extractedDataContainer" class="hidden bg-white border border-gray-200 rounded-xl p-4 mb-4" aria-live="polite">
             <div class="mb-3">
                 <h2 class="font-bold text-gray-900">Extracted Excel Data</h2>
-                <p class="text-sm text-gray-500 mt-1">Review the extracted sales totals before comparing with Nooma.</p>
+                <p class="text-sm text-gray-500 mt-1">Review Grand Total, Total Discount, and Service Charge before comparing with Nooma.</p>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
                     <thead class="border-b border-gray-200 text-left text-gray-600">
                         <tr>
                             <th class="py-2 pr-4 font-semibold">Date / Report Range</th>
-                            <th class="py-2 text-right font-semibold">Total Sales PHP</th>
+                            <th class="py-2 text-right font-semibold">Excel Total Sale</th>
+                            <th class="py-2 text-right font-semibold">Total Discount</th>
+                            <th class="py-2 text-right font-semibold">Service Charge</th>
                         </tr>
                     </thead>
                     <tbody id="extractedDataRows" class="divide-y divide-gray-100"></tbody>
@@ -492,7 +494,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                         class="text-sm
                                text-gray-500 mt-2"
                     >
-                        Nooma compares Excel daily or report-range totals with its non-voided Total Sales.
+                        Nooma compares each Excel field with the matching non-voided report value.
                     </p>
 
                 </div>
@@ -614,14 +616,14 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                        pr-4
                                        font-medium"
                             >
-                                Excel daily sales
+                                Excel Total Sale / Nooma Grand Total
                             </td>
 
                             <td
                                 class="py-3
                                        text-gray-500"
                             >
-                                Sum of product-row sales amounts for that date
+                                Sum of Excel Grand Total values for that date
                             </td>
 
                         </tr>
@@ -634,14 +636,14 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                        pr-4
                                        font-medium"
                             >
-                                Nooma Total Sale
+                                Total Discount
                             </td>
 
                             <td
                                 class="py-3
                                        text-gray-500"
                             >
-                                Sum of non-voided shift Total Sales for that date
+                                Compare Excel Total Discount with Nooma Total Sales Deduction
                             </td>
                         </tr>
                         <tr>
@@ -650,13 +652,13 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                        pr-4
                                        font-medium"
                             >
-                                Difference
+                                Service Charge
                             </td>
                             <td
                                 class="py-3
                                        text-gray-500"
                             >
-                                Excel daily sales minus Nooma Total Sale
+                                Compare Excel Service Charge with Nooma Service Charge
                             </td>
                         </tr>
                         <tr>
@@ -671,7 +673,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                 class="py-3
                                        text-gray-500"
                             >
-                                Matched when the difference is less than one cent
+                                Each field is matched independently when its difference is less than one cent
                             </td>
                         </tr>
                         <tr>
@@ -720,7 +722,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                     class="text-sm
                            text-gray-500 mt-1"
                 >
-                    Excel product-row totals compared with Nooma's daily or report-range Total Sales.
+                    Grand Total, Total Discount, and Service Charge compared with the matching Nooma values.
                 </p>
             </div>
             <!-- TABLE -->
@@ -748,7 +750,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                        font-semibold
                                        text-gray-600"
                             >
-                                Excel Total Sale
+                                Field
                             </th>
                             <th
                                 class="text-left
@@ -756,7 +758,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                        font-semibold
                                        text-gray-600"
                             >
-                                Nooma Total Sale
+                                Excel Total
                             </th>
                             <th
                                 class="text-center
@@ -764,7 +766,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                        font-semibold
                                        text-gray-600"
                             >
-                                Difference
+                                Nooma Total
                             </th>
                             <th
                                 class="text-right
@@ -772,8 +774,9 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                        font-semibold
                                        text-gray-600"
                             >
-                                Result
+                                Difference
                             </th>
+                            <th class="text-right px-6 py-4 font-semibold text-gray-600">Result</th>
                         </tr>
                     </thead>
                     <tbody
@@ -784,7 +787,11 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                             <?php foreach ($comparisonResults as $comparison): ?>
                                 <?php
                                 $matched = $comparison["status"] === "Matched";
+                                $hasExcelTotal = $comparison["excel_total"] !== null;
                                 $hasNoomaTotal = $comparison["nooma_total"] !== null;
+                                $statusClass = $matched
+                                    ? "text-green-700"
+                                    : ($comparison["status"] === "Difference" ? "text-amber-700" : "text-gray-500");
                                 ?>
                                 <tr>
                                     <td class="px-6 py-4 font-medium text-gray-800">
@@ -793,17 +800,20 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                                             - <?= htmlspecialchars(date("M j, Y", strtotime($comparison["date_to"]))) ?>
                                         <?php endif; ?>
                                     </td>
+                                    <td class="px-6 py-4 font-medium text-gray-700">
+                                        <?= htmlspecialchars($comparison["metric"]) ?>
+                                    </td>
                                     <td class="px-6 py-4 text-right tabular-nums">
-                                        <?= number_format((float) $comparison["excel_total"], 2) ?>
+                                        <?= $hasExcelTotal ? number_format((float) $comparison["excel_total"], 2) : "—" ?>
                                     </td>
                                     <td class="px-6 py-4 text-right tabular-nums">
                                         <?= $hasNoomaTotal ? number_format((float) $comparison["nooma_total"], 2) : "—" ?>
                                     </td>
                                     <td class="px-6 py-4 text-right tabular-nums">
-                                        <?= $hasNoomaTotal ? number_format((float) $comparison["difference"], 2) : "—" ?>
+                                        <?= $hasExcelTotal && $hasNoomaTotal ? number_format((float) $comparison["difference"], 2) : "—" ?>
                                     </td>
                                     <td class="px-6 py-4 text-center">
-                                        <span class="font-semibold <?= $matched ? "text-green-700" : ($hasNoomaTotal ? "text-amber-700" : "text-gray-500") ?>">
+                                        <span class="font-semibold <?= $statusClass ?>">
                                             <?= htmlspecialchars($comparison["status"]) ?>
                                         </span>
                                     </td>
@@ -811,7 +821,7 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="5" class="px-6 py-10 text-center text-gray-400">
+                                <td colspan="6" class="px-6 py-10 text-center text-gray-400">
                                     No comparison results yet.
                                 </td>
                             </tr>
@@ -999,19 +1009,24 @@ function renderExtractedData(dailyTotals) {
     dailyTotals.forEach((entry) => {
         const row = document.createElement("tr");
         const dateCell = document.createElement("td");
-        const amountCell = document.createElement("td");
         const dateLabel = entry.start_date && entry.end_date
             ? `${entry.start_date} - ${entry.end_date}`
             : entry.date;
 
         dateCell.className = "py-2 pr-4 font-medium text-gray-800";
         dateCell.textContent = dateLabel;
-        amountCell.className = "py-2 text-right tabular-nums";
-        amountCell.textContent = Number(entry.amount).toLocaleString("en-PH", {
-            minimumFractionDigits: 2,
-            maximumFractionDigits: 2
+        row.appendChild(dateCell);
+        [entry.grand_total, entry.total_discount, entry.service_charge].forEach((amount) => {
+            const amountCell = document.createElement("td");
+            amountCell.className = "py-2 text-right tabular-nums";
+            amountCell.textContent = amount === null
+                ? "Not in Excel"
+                : Number(amount).toLocaleString("en-PH", {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            row.appendChild(amountCell);
         });
-        row.append(dateCell, amountCell);
         extractedDataRows.appendChild(row);
     });
 
@@ -1161,28 +1176,18 @@ function parseSalesAmount(value) {
     return isNegative ? -Math.abs(amount) : amount;
 }
 
-function salesColumnIndex(headers) {
-    const priorities = [
-        ["total sales php"],
-        ["total sale", "total sales"],
-        ["net sales"],
-        ["sales amount", "amount of sales"],
-        ["gross sales"],
-        ["sales", "sale amount", "amount", "grand total", "total amount", "net amount", "gross amount", "line total", "item total", "total"]
-    ];
+function salesColumnIndexes(headers) {
+    const columnAliases = {
+        grand_total: ["total sale", "total sales", "total sale php", "total sales php", "grand total", "grand total php"],
+        total_discount: ["total discount", "total discount php", "total discounts", "discount total", "total discount amount", "total sales deduction"],
+        service_charge: ["service charge", "service charge php", "service charges", "service charge total"]
+    };
 
-    for (const candidates of priorities) {
-        const index = headers.findIndex((header) => candidates.includes(normalizeHeader(header)));
-        if (index !== -1) {
-            return index;
-        }
-    }
-
-    return headers.findIndex((header) => {
-        const normalized = normalizeHeader(header);
-        return /(sale|sales|amount|revenue|total)/.test(normalized)
-            && !/(discount|tax|quantity|qty|price|cost|balance|change)/.test(normalized);
-    });
+    return Object.fromEntries(Object.entries(columnAliases).map(([field, aliases]) => [
+        field,
+        aliases.map((alias) => headers.findIndex((header) => normalizeHeader(header) === alias))
+            .find((column) => column !== -1) ?? -1
+    ]));
 }
 
 function dailySalesFromWorkbook(workbook, filename) {
@@ -1197,20 +1202,24 @@ function dailySalesFromWorkbook(workbook, filename) {
             const headers = rows[headerRow] || [];
             const populatedHeaders = headers.filter((header) => String(header ?? "").trim() !== "").length;
             const dateColumn = headers.findIndex((header) => /(^| )date( |$)/.test(normalizeHeader(header)));
-            const amountColumn = salesColumnIndex(headers);
-            if (populatedHeaders < 2 || amountColumn === -1 || dateColumn === amountColumn) {
+            const amountColumns = salesColumnIndexes(headers);
+            if (populatedHeaders < 2 || amountColumns.grand_total === -1) {
                 continue;
             }
 
+            const availableAmountColumns = Object.values(amountColumns).filter((column) => column !== -1);
             const hasNumericSalesRows = rows
                 .slice(headerRow + 1, headerRow + 21)
-                .some((row) => parseSalesAmount((row || [])[amountColumn]) !== null);
+                .some((row) => availableAmountColumns.some((column) => parseSalesAmount((row || [])[column]) !== null));
             if (!hasNumericSalesRows) {
                 continue;
             }
 
             const totals = new Map();
-            let reportTotal = 0;
+            const reportTotals = Object.fromEntries(Object.entries(amountColumns).map(([field, column]) => [
+                field,
+                column === -1 ? null : 0
+            ]));
             let reportAmountCount = 0;
             let currentDate = null;
             for (let priorRowIndex = 0; priorRowIndex < headerRow; priorRowIndex += 1) {
@@ -1243,8 +1252,9 @@ function dailySalesFromWorkbook(workbook, filename) {
                 }
 
                 if (!parsedDate) {
+                    const amountColumnIndexes = new Set(availableAmountColumns);
                     for (let columnIndex = 0; columnIndex < row.length; columnIndex += 1) {
-                        if (columnIndex === amountColumn || columnIndex === dateColumn) {
+                        if (amountColumnIndexes.has(columnIndex) || columnIndex === dateColumn) {
                             continue;
                         }
                         const rowDate = parseSingleReportDate(row[columnIndex]);
@@ -1254,17 +1264,33 @@ function dailySalesFromWorkbook(workbook, filename) {
                         }
                     }
                 }
-                const amount = parseSalesAmount(row[amountColumn]);
-                if (amount !== null) {
-                    reportTotal += amount;
+                const amounts = Object.fromEntries(Object.entries(amountColumns).map(([field, column]) => [
+                    field,
+                    parseSalesAmount(row[column])
+                ]));
+                if (Object.values(amounts).some((amount) => amount !== null)) {
+                    Object.keys(reportTotals).forEach((field) => {
+                        if (reportTotals[field] !== null && amounts[field] !== null) {
+                            reportTotals[field] += amounts[field];
+                        }
+                    });
                     reportAmountCount += 1;
                     if (currentDate) {
-                        totals.set(currentDate, (totals.get(currentDate) || 0) + amount);
+                        const dailyTotal = totals.get(currentDate) || Object.fromEntries(Object.entries(amountColumns).map(([field, column]) => [
+                            field,
+                            column === -1 ? null : 0
+                        ]));
+                        Object.keys(dailyTotal).forEach((field) => {
+                            if (dailyTotal[field] !== null && amounts[field] !== null) {
+                                dailyTotal[field] += amounts[field];
+                            }
+                        });
+                        totals.set(currentDate, dailyTotal);
                     }
                 }
             }
             if (totals.size) {
-                return Array.from(totals, ([date, amount]) => ({ date, amount }));
+                return Array.from(totals, ([date, amounts]) => ({ date, ...amounts }));
             }
 
             if (reportAmountCount) {
@@ -1276,13 +1302,13 @@ function dailySalesFromWorkbook(workbook, filename) {
                     return [{
                         start_date: filenameDates[0],
                         end_date: filenameDates[filenameDates.length - 1],
-                        amount: reportTotal
+                        ...reportTotals
                     }];
                 }
             }
         }
     }
-    throw new Error("Could not find product rows and a sales amount column. If the sheet has no row dates, include its date or date range in the filename.");
+    throw new Error("Could not find an Excel Total Sales or Grand Total column. If the sheet has no row dates, include its date or date range in the filename.");
 }
 inventoryUploadForm.addEventListener("submit", async function (event) {
     event.preventDefault();

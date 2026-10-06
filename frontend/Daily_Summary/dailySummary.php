@@ -475,7 +475,7 @@ $isPaidNote = static function ($note): bool {
                             <th class="px-6 py-3.5">Shift</th>
                             <th class="px-6 py-3.5">Tables</th>
                             <th class="px-6 py-3.5">Pax</th>
-                            <th class="px-6 py-3.5">Bar Sale</th>
+                            <th class="px-6 py-3.5">Service Charge</th>
                             <th class="px-6 py-3.5">Kitchen Sale</th>
                             <th class="px-6 py-3.5">Grand Total</th>
                             <th class="px-6 py-3.5">Unpaid Accounts</th>
@@ -590,7 +590,7 @@ $isPaidNote = static function ($note): bool {
                                         <?= (int) $report["total_pax"] ?>
                                     </td>
                                     <td class="px-6 py-4 font-medium text-gray-900">
-                                        <?= peso((float) ($combinedDetailFields["barSale"] ?? 0)) ?>
+                                        <?= peso((float) ($combinedDetailFields["serviceCharge"] ?? 0)) ?>
                                     </td>
                                     <td class="px-6 py-4 font-medium text-gray-900">
                                         <?= peso((float) ($combinedDetailFields["kitchenSale"] ?? 0)) ?>

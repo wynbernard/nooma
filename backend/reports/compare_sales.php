@@ -14,10 +14,52 @@ if ($_SERVER["REQUEST_METHOD"] !== "POST") {
 require_once __DIR__ . "/../config/database.php";
 
 $redirect = "../../frontend/Inventory/inventory.php";
-$totalSaleExpression = "CASE WHEN JSON_VALID(notes) THEN COALESCE(
-            CAST(JSON_UNQUOTE(JSON_EXTRACT(notes, '$.totalSale')) AS DECIMAL(12,2)),
-            pos_sales_total
-        ) ELSE pos_sales_total END";
+$grandTotalExpression = "CASE WHEN JSON_VALID(dr.notes) THEN COALESCE(
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(dr.notes, '$.grandTotal')) AS DECIMAL(12,2)),
+            dr.telegram_declared_total
+        ) ELSE dr.telegram_declared_total END";
+$totalDiscountExpression = "CASE WHEN JSON_VALID(dr.notes) THEN COALESCE(
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(dr.notes, '$.totalSalesDeduction')) AS DECIMAL(12,2)),
+            0
+        ) ELSE 0 END";
+$serviceChargeExpression = "CASE WHEN JSON_VALID(dr.notes) THEN COALESCE(
+            CAST(JSON_UNQUOTE(JSON_EXTRACT(dr.notes, '$.serviceCharge')) AS DECIMAL(12,2)),
+            service_charges.service_charge_total,
+            0
+        ) ELSE COALESCE(service_charges.service_charge_total, 0) END";
+$serviceChargeJoin = "LEFT JOIN (
+        SELECT report_id, SUM(amount) AS service_charge_total
+        FROM report_sales
+        WHERE sales_type = 'service_charge'
+        GROUP BY report_id
+    ) service_charges ON service_charges.report_id = dr.report_id";
+$metricDefinitions = [
+    "grand_total" => ["label" => "Excel Total Sale / Nooma Grand Total", "expression" => $grandTotalExpression],
+    "total_discount" => ["label" => "Total Discount", "expression" => $totalDiscountExpression],
+    "service_charge" => ["label" => "Service Charge", "expression" => $serviceChargeExpression]
+];
+$appendComparisons = static function ($date, $dateTo, $excelTotals, $noomaTotals) use ($metricDefinitions): array {
+    $comparisons = [];
+    foreach ($metricDefinitions as $field => $definition) {
+        $excelTotal = $excelTotals[$field] ?? null;
+        $noomaTotal = $noomaTotals === null ? null : (float) $noomaTotals[$field];
+        $difference = $excelTotal === null || $noomaTotal === null
+            ? null
+            : round((float) $excelTotal - $noomaTotal, 2);
+        $comparisons[] = [
+            "date" => $date,
+            "date_to" => $dateTo,
+            "metric" => $definition["label"],
+            "excel_total" => $excelTotal === null ? null : (float) $excelTotal,
+            "nooma_total" => $noomaTotal,
+            "difference" => $difference,
+            "status" => $excelTotal === null
+                ? "Not in Excel"
+                : ($noomaTotal === null ? "No Nooma report" : (abs($difference) < 0.01 ? "Matched" : "Difference"))
+        ];
+    }
+    return $comparisons;
+};
 $dailyTotals = json_decode((string) ($_POST["daily_totals_json"] ?? ""), true);
 
 if (!is_array($dailyTotals) || !$dailyTotals) {
@@ -36,23 +78,36 @@ if ($periodRows) {
     $endDate = (string) $period["end_date"];
     $startDateObject = DateTime::createFromFormat("!Y-m-d", $startDate);
     $endDateObject = DateTime::createFromFormat("!Y-m-d", $endDate);
-    $amount = $period["amount"] ?? null;
+    $hasValidAmounts = true;
+    foreach (array_keys($metricDefinitions) as $field) {
+        $amount = $period[$field] ?? null;
+        if (($field === "grand_total" && !is_numeric($amount))
+            || ($amount !== null && (!is_numeric($amount) || !is_finite((float) $amount)))) {
+            $hasValidAmounts = false;
+            break;
+        }
+    }
 
     if (count($periodRows) !== 1 || count($dailyTotals) !== 1
         || !$startDateObject || $startDateObject->format("Y-m-d") !== $startDate
         || !$endDateObject || $endDateObject->format("Y-m-d") !== $endDate
-        || $startDate > $endDate || !is_numeric($amount) || !is_finite((float) $amount)) {
-        $_SESSION["sales_comparison_error"] = "The Excel report range or sales total is invalid.";
+        || $startDate > $endDate || !$hasValidAmounts) {
+        $_SESSION["sales_comparison_error"] = "The Excel report range or comparison totals are invalid.";
         header("Location: {$redirect}");
         exit;
     }
 
-    $statement = mysqli_prepare($conn, "SELECT SUM({$totalSaleExpression}) AS total_sale, COUNT(*) AS report_count
-        FROM daily_reports
-        WHERE status <> 'voided' AND report_date BETWEEN ? AND ?");
+    $statement = mysqli_prepare($conn, "SELECT
+            SUM({$grandTotalExpression}) AS grand_total,
+            SUM({$totalDiscountExpression}) AS total_discount,
+            SUM({$serviceChargeExpression}) AS service_charge,
+            COUNT(*) AS report_count
+        FROM daily_reports dr
+        {$serviceChargeJoin}
+        WHERE dr.status <> 'voided' AND dr.report_date BETWEEN ? AND ?");
     if (!$statement) {
-        error_log("Total Sale comparison range query preparation failed: " . mysqli_error($conn));
-        $_SESSION["sales_comparison_error"] = "Could not load Nooma Total Sale values. Please try again.";
+        error_log("Sales comparison range query preparation failed: " . mysqli_error($conn));
+        $_SESSION["sales_comparison_error"] = "Could not load Nooma comparison values. Please try again.";
         header("Location: {$redirect}");
         exit;
     }
@@ -64,43 +119,51 @@ if ($periodRows) {
     mysqli_stmt_close($statement);
 
     $hasNoomaTotal = (int) ($rangeRow["report_count"] ?? 0) > 0;
-    $excelTotal = (float) $amount;
-    $noomaTotal = $hasNoomaTotal ? (float) $rangeRow["total_sale"] : null;
-    $difference = $hasNoomaTotal ? round($excelTotal - $noomaTotal, 2) : null;
-    $_SESSION["sales_comparison_results"] = [[
-        "date" => $startDate,
-        "date_to" => $endDate,
-        "excel_total" => $excelTotal,
-        "nooma_total" => $noomaTotal,
-        "difference" => $difference,
-        "status" => !$hasNoomaTotal ? "No Nooma report" : (abs($difference) < 0.01 ? "Matched" : "Difference")
-    ]];
+    $excelTotals = array_intersect_key($period, $metricDefinitions);
+    $noomaTotals = $hasNoomaTotal ? array_intersect_key($rangeRow, $metricDefinitions) : null;
+    $_SESSION["sales_comparison_results"] = $appendComparisons($startDate, $endDate, $excelTotals, $noomaTotals);
     header("Location: {$redirect}");
     exit;
 }
 
 $validatedTotals = [];
 foreach ($dailyTotals as $row) {
-    if (!is_array($row) || !isset($row["date"], $row["amount"])) {
+    if (!is_array($row) || !isset($row["date"])) {
         continue;
     }
 
     $date = (string) $row["date"];
     $dateObject = DateTime::createFromFormat("!Y-m-d", $date);
-    if (!$dateObject || $dateObject->format("Y-m-d") !== $date || !is_numeric($row["amount"])) {
+    if (!$dateObject || $dateObject->format("Y-m-d") !== $date) {
         continue;
     }
 
-    $amount = (float) $row["amount"];
-    if (!is_finite($amount)) {
+    $amounts = [];
+    foreach (array_keys($metricDefinitions) as $field) {
+        $amount = $row[$field] ?? null;
+        if (($field === "grand_total" && !is_numeric($amount))
+            || ($amount !== null && (!is_numeric($amount) || !is_finite((float) $amount)))) {
+            continue 2;
+        }
+        $amounts[$field] = $amount === null ? null : (float) $amount;
+    }
+
+    if (!$amounts) {
         continue;
     }
 
-    $validatedTotals[$date] = ($validatedTotals[$date] ?? 0.0) + $amount;
+    if (!isset($validatedTotals[$date])) {
+        $validatedTotals[$date] = array_fill_keys(array_keys($metricDefinitions), null);
+    }
+    foreach ($amounts as $field => $amount) {
+        if ($amount !== null) {
+            $validatedTotals[$date][$field] = ($validatedTotals[$date][$field] ?? 0.0) + $amount;
+        }
+    }
 }
 
 if (!$validatedTotals) {
-    $_SESSION["sales_comparison_error"] = "The Excel file did not contain valid date and sales amount values.";
+    $_SESSION["sales_comparison_error"] = "The Excel file did not contain valid dates and Total Sales values.";
     header("Location: {$redirect}");
     exit;
 }
@@ -108,15 +171,20 @@ if (!$validatedTotals) {
 ksort($validatedTotals);
 $dates = array_keys($validatedTotals);
 $placeholders = implode(",", array_fill(0, count($dates), "?"));
-$sql = "SELECT report_date, SUM({$totalSaleExpression}) AS total_sale
-        FROM daily_reports
-        WHERE status <> 'voided' AND report_date IN ({$placeholders})
-        GROUP BY report_date";
+$sql = "SELECT
+        dr.report_date,
+        SUM({$grandTotalExpression}) AS grand_total,
+        SUM({$totalDiscountExpression}) AS total_discount,
+        SUM({$serviceChargeExpression}) AS service_charge
+    FROM daily_reports dr
+    {$serviceChargeJoin}
+    WHERE dr.status <> 'voided' AND dr.report_date IN ({$placeholders})
+    GROUP BY dr.report_date";
 $statement = mysqli_prepare($conn, $sql);
 
 if (!$statement) {
-    error_log("Total Sale comparison query preparation failed: " . mysqli_error($conn));
-    $_SESSION["sales_comparison_error"] = "Could not load Nooma Total Sale values. Please try again.";
+    error_log("Sales comparison query preparation failed: " . mysqli_error($conn));
+    $_SESSION["sales_comparison_error"] = "Could not load Nooma comparison values. Please try again.";
     header("Location: {$redirect}");
     exit;
 }
@@ -131,22 +199,17 @@ mysqli_stmt_execute($statement);
 $result = mysqli_stmt_get_result($statement);
 $noomaTotals = [];
 while ($row = mysqli_fetch_assoc($result)) {
-    $noomaTotals[$row["report_date"]] = (float) $row["total_sale"];
+    $noomaTotals[$row["report_date"]] = array_intersect_key($row, $metricDefinitions);
 }
 mysqli_stmt_close($statement);
 
 $comparison = [];
 foreach ($validatedTotals as $date => $excelTotal) {
     $hasNoomaTotal = array_key_exists($date, $noomaTotals);
-    $noomaTotal = $hasNoomaTotal ? $noomaTotals[$date] : null;
-    $difference = $hasNoomaTotal ? round($excelTotal - $noomaTotal, 2) : null;
-    $comparison[] = [
-        "date" => $date,
-        "excel_total" => $excelTotal,
-        "nooma_total" => $noomaTotal,
-        "difference" => $difference,
-        "status" => !$hasNoomaTotal ? "No Nooma report" : (abs($difference) < 0.01 ? "Matched" : "Difference")
-    ];
+    $comparison = array_merge(
+        $comparison,
+        $appendComparisons($date, null, $excelTotal, $hasNoomaTotal ? $noomaTotals[$date] : null)
+    );
 }
 
 $_SESSION["sales_comparison_results"] = $comparison;

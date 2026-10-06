@@ -41,6 +41,7 @@ $salesResult = mysqli_query($conn, "
         dr.shift_name,
         COALESCE(bar_sales.bar_sales_total, 0) AS bar_sales_total,
         COALESCE(kitchen_sales.kitchen_sales_total, 0) AS kitchen_sales_total,
+        COALESCE(service_charges.service_charge_total, 0) AS service_charge_total,
         dr.total_tables,
         dr.total_pax,
         dr.telegram_declared_total,
@@ -63,6 +64,12 @@ $salesResult = mysqli_query($conn, "
         WHERE sales_type = 'kitchen'
         GROUP BY report_id
     ) kitchen_sales ON kitchen_sales.report_id = dr.report_id
+    LEFT JOIN (
+        SELECT report_id, SUM(amount) AS service_charge_total
+        FROM report_sales
+        WHERE sales_type = 'service_charge'
+        GROUP BY report_id
+    ) service_charges ON service_charges.report_id = dr.report_id
     LEFT JOIN (
         SELECT report_id, SUM(amount) AS payment_total
         FROM report_payments
@@ -256,7 +263,7 @@ if ($existingSaleTypesResult) {
                             <th class="px-6 py-3.5">Date</th>
                             <th class="px-6 py-3.5">Shift</th>
                             <th class="px-6 py-3.5">Cash Remitted</th>
-                            <th class="px-6 py-3.5">Kitchen Sale</th>
+                            <th class="px-6 py-3.5">Service Charge</th>
                             <th class="px-6 py-3.5">Tables / Pax</th>
                             <th class="px-6 py-3.5">Sales</th>
                             <th class="px-6 py-3.5">Unpaid Accounts</th>
@@ -360,7 +367,7 @@ if ($existingSaleTypesResult) {
                                         ₱<?= number_format((float) $cashRemitted, 2) ?>
                                     </td>
                                     <td class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
-                                        ₱<?= number_format((float) $sale["kitchen_sales_total"], 2) ?>
+                                        ₱<?= number_format((float) $sale["service_charge_total"], 2) ?>
                                     </td>
                                     <td class="px-6 py-4 text-gray-500 whitespace-nowrap">
                                         <span class="font-medium text-gray-800"><?= (int) $sale["total_tables"] ?></span> <span class="text-gray-400">/</span> <?= (int) $sale["total_pax"] ?> pax
@@ -413,101 +420,131 @@ if ($existingSaleTypesResult) {
 
                                 <!-- Expandable Details Row -->
                                 <tr id="sale-details-<?= (int) $sale["report_id"] ?>" 
-                                    class="sale-details-row hidden bg-gray-50" 
-                                    data-has-unpaid="<?= $hasUnpaidAccount ? 'true' : 'false' ?>" 
-                                    data-sale-channel="<?= $saleChannel ?>">
+                            class="sale-details-row hidden bg-gray-50" 
+                            data-has-unpaid="<?= $hasUnpaidAccount ? 'true' : 'false' ?>" 
+                            data-sale-channel="<?= $saleChannel ?>">
+                            
+                            <td colspan="7" class="px-5 py-5">
+                                <div class="bg-white border rounded-xl p-4">
                                     
-                                    <td colspan="7" class="px-5 py-5">
-                                        <div class="bg-white border rounded-xl p-4">
-                                            
-                                            <!-- Header Section with Search Box -->
-                                            <div class="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-gray-100">
-                                                <div>
-                                                    <p class="font-semibold text-gray-900">Detailed Sale & Account Breakdown</p>
-                                                    <p class="text-xs text-gray-500">Report ID: #<?= (int) $sale["report_id"] ?></p>
-                                                </div>
-                                                
-                                                <div class="flex items-center gap-2 flex-wrap">
-                                                    <!-- Search Input -->
-                                                    <div class="relative">
-                                                        <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-gray-400">
-                                                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
-                                                            </svg>
-                                                        </span>
-                                                        <input type="text" 
-                                                            id="search-details-<?= (int) $sale["report_id"] ?>" 
-                                                            onkeyup="filterSaleDetails(<?= (int) $sale["report_id"] ?>)" 
-                                                            placeholder="Search details..." 
-                                                            class="pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all w-44 sm:w-52">
-                                                    </div>
-
-                                                    <span class="text-xs font-semibold px-2.5 py-1.5 bg-gray-100 rounded-md text-gray-700">
-                                                        Channel: <?= htmlspecialchars($saleChannel) ?>
-                                                    </span>
-                                                </div>
+                                    <!-- Header Section with Search Box -->
+                                    <div class="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-gray-100">
+                                        <div>
+                                            <p class="font-semibold text-gray-900">Detailed Sale & Account Breakdown</p>
+                                            <p class="text-xs text-gray-500">Report ID: #<?= (int) $sale["report_id"] ?></p>
+                                        </div>
+                                        
+                                        <div class="flex items-center gap-2 flex-wrap">
+                                            <!-- Search Input -->
+                                            <div class="relative">
+                                                <span class="absolute inset-y-0 left-0 flex items-center pl-2.5 pointer-events-none text-gray-400">
+                                                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                                                    </svg>
+                                                </span>
+                                                <input type="text" 
+                                                    id="search-details-<?= (int) $sale["report_id"] ?>" 
+                                                    onkeyup="filterSaleDetails(<?= (int) $sale["report_id"] ?>)" 
+                                                    placeholder="Search details..." 
+                                                    class="pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all w-44 sm:w-52">
                                             </div>
 
-                                            <?php 
-                                                // Filter out fields that are empty, null, or blank strings
-                                                $filteredFields = array_filter($saleFields, function($val) {
-                                                    return $val !== null && trim((string)$val) !== '';
-                                                });
-                                                
-                                                // Filter out images where path is empty
-                                                $filteredImages = array_filter($ownerImages, function($path) {
-                                                    return $path !== null && trim((string)$path) !== '';
-                                                });
-                                            ?>
+                                            <span class="text-xs font-semibold px-2.5 py-1.5 bg-gray-100 rounded-md text-gray-700">
+                                                Channel: <?= htmlspecialchars($saleChannel) ?>
+                                            </span>
+                                        </div>
+                                    </div>
 
-                                            <?php if (empty($filteredFields) && empty($filteredImages)): ?>
-                                                <!-- Empty State -->
-                                                <p class="text-xs text-gray-400 py-4 text-center">
-                                                    No saved form details or attachments are available for this sale.
-                                                </p>
-                                            <?php else: ?>
-                                                <!-- Cards Grid Container -->
-                                                <div id="grid-container-<?= (int) $sale["report_id"] ?>" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                    <?php 
+                                        // Filter out fields that are empty, null, or blank strings
+                                        $filteredFields = array_filter($saleFields, function($val) {
+                                            return $val !== null && trim((string)$val) !== '';
+                                        });
+                                        
+                                        // Filter out images where path is empty
+                                        $filteredImages = array_filter($ownerImages, function($path) {
+                                            return $path !== null && trim((string)$path) !== '';
+                                        });
+
+                                        // Highlight keywords list
+                                        $highlightKeywords = ['gcashqr', 'paymaya', 'amex', 'visa', 'mastercard', 'bancnet', 'jcb'];
+                                    ?>
+
+                                    <?php if (empty($filteredFields) && empty($filteredImages)): ?>
+                                        <!-- Empty State -->
+                                        <p class="text-xs text-gray-400 py-4 text-center">
+                                            No saved form details or attachments are available for this sale.
+                                        </p>
+                                    <?php else: ?>
+                                        <!-- Cards Grid Container -->
+                                        <div id="grid-container-<?= (int) $sale["report_id"] ?>" class="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                                            
+                                            <!-- Sale Fields Cards (Only with values) -->
+                                            <?php foreach ($filteredFields as $fieldName => $fieldValue): ?>
+                                                <?php 
+                                                    $formattedFieldName = ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName));
+                                                    $cleanFieldValue = (string) $fieldValue;
+                                                    $lowerFieldName = strtolower($fieldName);
                                                     
-                                                    <!-- Sale Fields Cards (Only with values) -->
-                                                    <?php foreach ($filteredFields as $fieldName => $fieldValue): ?>
-                                                        <div class="detail-card border rounded-lg p-3 bg-white" data-search-text="<?= strtolower(htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName)) . ' ' . $fieldValue)) ?>">
-                                                            <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">
-                                                                <?= htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName))) ?>
-                                                            </p>
-                                                            <p class="text-sm font-semibold text-gray-800 mt-1 break-words">
-                                                                <?= htmlspecialchars((string) $fieldValue) ?>
-                                                            </p>
-                                                        </div>
-                                                    <?php endforeach; ?>
+                                                    // Robust check if field name represents pax, guest count, or table number
+                                                    if (str_contains($lowerFieldName, 'pax') || str_contains($lowerFieldName, 'table') || str_contains($lowerFieldName, 'guest')) {
+                                                        // Strip out peso signs (both symbol and HTML entities/codes), PHP prefix, and extraneous spaces/commas if needed
+                                                        $cleanFieldValue = preg_replace('/[₱]|(&#8369;)|php/ui', '', $cleanFieldValue);
+                                                        $cleanFieldValue = trim($cleanFieldValue);
+                                                    }
 
-                                                    <!-- Owner Images Cards (Only with values) -->
-                                                    <?php foreach ($filteredImages as $accountId => $imagePath): ?>
-                                                        <div class="detail-card border rounded-lg p-3 bg-white flex flex-col justify-between" data-search-text="<?= strtolower('owner account #' . $accountId . ' image') ?>">
-                                                            <div>
-                                                                <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">
-                                                                    Owner Account #<?= htmlspecialchars((string) $accountId) ?> Image
-                                                                </p>
-                                                            </div>
-                                                            <div class="mt-2">
-                                                                <a href="../../<?= htmlspecialchars($imagePath) ?>" 
-                                                                target="_blank" 
-                                                                rel="noopener noreferrer" 
-                                                                class="inline-block overflow-hidden rounded-lg border border-gray-200 hover:opacity-90 transition-opacity">
-                                                                    <img src="../../<?= htmlspecialchars($imagePath) ?>" 
-                                                                        alt="Owner account attachment" 
-                                                                        class="h-16 w-16 object-cover">
-                                                                </a>
-                                                            </div>
-                                                        </div>
-                                                    <?php endforeach; ?>
-
+                                                    $combinedSearchText = strtolower($formattedFieldName . ' ' . $cleanFieldValue);
+                                                    
+                                                    // Check if field matches any highlighted payment/card method
+                                                    $isHighlighted = false;
+                                                    foreach ($highlightKeywords as $keyword) {
+                                                        if (str_contains($lowerFieldName, $keyword) || str_contains(strtolower($cleanFieldValue), $keyword)) {
+                                                            $isHighlighted = true;
+                                                            break;
+                                                        }
+                                                    }
+                                                ?>
+                                                <div class="detail-card border rounded-lg p-3 bg-white <?= $isHighlighted ? 'ring-2 ring-blue-500/30 bg-blue-50/20 border-blue-200' : '' ?>" 
+                                                     data-search-text="<?= htmlspecialchars($combinedSearchText) ?>">
+                                                    <p class="text-xs text-gray-500 uppercase tracking-wide font-medium flex items-center justify-between">
+                                                        <span><?= htmlspecialchars($formattedFieldName) ?></span>
+                                                        <?php if ($isHighlighted): ?>
+                                                            <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">Featured</span>
+                                                        <?php endif; ?>
+                                                    </p>
+                                                    <p class="text-sm font-semibold text-gray-800 mt-1 break-words">
+                                                        <?= htmlspecialchars($cleanFieldValue) ?>
+                                                    </p>
                                                 </div>
-                                            <?php endif; ?>
+                                            <?php endforeach; ?>
+
+                                            <!-- Owner Images Cards (Only with values) -->
+                                            <?php foreach ($filteredImages as $accountId => $imagePath): ?>
+                                                <div class="detail-card border rounded-lg p-3 bg-white flex flex-col justify-between" data-search-text="<?= strtolower('owner account #' . $accountId . ' image') ?>">
+                                                    <div>
+                                                        <p class="text-xs text-gray-500 uppercase tracking-wide font-medium">
+                                                            Owner Account #<?= htmlspecialchars((string) $accountId) ?> Image
+                                                        </p>
+                                                    </div>
+                                                    <div class="mt-2">
+                                                        <a href="../../<?= htmlspecialchars($imagePath) ?>" 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        class="inline-block overflow-hidden rounded-lg border border-gray-200 hover:opacity-90 transition-opacity">
+                                                            <img src="../../<?= htmlspecialchars($imagePath) ?>" 
+                                                                alt="Owner account attachment" 
+                                                                class="h-16 w-16 object-cover">
+                                                        </a>
+                                                    </div>
+                                                </div>
+                                            <?php endforeach; ?>
 
                                         </div>
-                                    </td>
-                                </tr>
+                                    <?php endif; ?>
+
+                                </div>
+                            </td>
+                        </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
                     </tbody>
@@ -1203,9 +1240,44 @@ calculateOnlineTips();
         document.querySelectorAll(".toggle-sale-details").forEach(button => {
             button.addEventListener("click", () => {
                 const details = document.getElementById(button.dataset.target);
-                const isHidden = details.classList.toggle("hidden");
-                button.setAttribute("aria-expanded", String(!isHidden));
-                button.textContent = isHidden ? "Details" : "Hide Details";
+                const row = button.closest(".sale-row");
+                const allDetails = document.querySelectorAll(".sale-details-row");
+                const allButtons = document.querySelectorAll(".toggle-sale-details");
+                const allRows = document.querySelectorAll(".sale-row");
+
+                const isOpening = Boolean(details && details.classList.contains("hidden"));
+
+                allDetails.forEach(detail => {
+                    if (detail !== details) {
+                        detail.classList.add("hidden");
+                    }
+                });
+
+                allButtons.forEach(otherButton => {
+                    const otherTarget = otherButton.dataset.target ? document.getElementById(otherButton.dataset.target) : null;
+                    const otherExpanded = Boolean(otherTarget && !otherTarget.classList.contains("hidden"));
+                    otherButton.setAttribute("aria-expanded", String(otherExpanded));
+                    otherButton.textContent = otherExpanded ? "Hide Details" : "Details";
+                });
+
+                allRows.forEach(otherRow => {
+                    otherRow.classList.remove("bg-blue-50", "ring-1", "ring-blue-200", "shadow-sm");
+                });
+
+                if (!details) {
+                    return;
+                }
+
+                details.classList.toggle("hidden", !isOpening);
+                button.setAttribute("aria-expanded", String(isOpening));
+                button.textContent = isOpening ? "Hide Details" : "Details";
+
+                if (row) {
+                    row.classList.toggle("bg-blue-50", isOpening);
+                    row.classList.toggle("ring-1", isOpening);
+                    row.classList.toggle("ring-blue-200", isOpening);
+                    row.classList.toggle("shadow-sm", isOpening);
+                }
             });
         });
 
