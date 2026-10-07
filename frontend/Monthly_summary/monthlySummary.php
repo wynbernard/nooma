@@ -163,10 +163,6 @@ function peso(float $amount): string {
                 <p class="text-sm text-gray-500">Non POS</p>
                 <p class="text-2xl font-bold mt-2"><?= peso($monthly["nonPos"]) ?></p>
             </div>
-            <div class="bg-white border rounded-2xl p-5 shadow-sm">
-                <p class="text-sm text-gray-500">Collected Payments</p>
-                <p class="text-2xl font-bold mt-2"><?= peso($monthly["payments"]) ?></p>
-            </div>
         </div>
 
         <section class="bg-white border rounded-2xl shadow-sm overflow-hidden">

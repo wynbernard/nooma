@@ -34,9 +34,34 @@ $page_description = "Compare StoreHub totals and adjustments with Nooma";
 
 
 require_once __DIR__ . "/../../backend/config/database.php";
+require_once __DIR__ . "/../../backend/reports/refresh_sales_comparison.php";
 $comparisonResults = $_SESSION["sales_comparison_results"] ?? [];
-$comparisonError = $_SESSION["sales_comparison_error"] ?? "";
-unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]);
+$comparisonError = isset($_GET["refresh_comparison"])
+    ? ""
+    : ($_SESSION["sales_comparison_error"] ?? "");
+unset($_SESSION["sales_comparison_error"]);
+
+try {
+    if (is_array($comparisonResults) && $comparisonResults) {
+        $comparisonResults = refresh_sales_comparison($conn, $comparisonResults);
+        $_SESSION["sales_comparison_results"] = $comparisonResults;
+    }
+} catch (Throwable $error) {
+    error_log("Live sales comparison refresh failed: " . $error->getMessage());
+    $comparisonError = "Could not refresh Nooma comparison values. Please reload the page and try again.";
+    $comparisonResults = [];
+}
+
+if (isset($_GET["refresh_comparison"])) {
+    header("Content-Type: application/json; charset=utf-8");
+    if ($comparisonError !== "") {
+        http_response_code(500);
+        echo json_encode(["success" => false, "message" => $comparisonError]);
+    } else {
+        echo json_encode(["success" => true, "results" => $comparisonResults]);
+    }
+    exit;
+}
 
 ?>
 
@@ -724,6 +749,9 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                 >
                     Grand Total, Total Discount, and Service Charge compared with the matching Nooma values.
                 </p>
+                <p id="comparisonRefreshError" class="hidden mt-2 text-sm text-red-600" role="alert">
+                    Could not refresh Nooma totals. The displayed values may be out of date.
+                </p>
             </div>
             <!-- TABLE -->
             <div
@@ -780,6 +808,8 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
                         </tr>
                     </thead>
                     <tbody
+                        id="comparisonResultsBody"
+                        data-refresh-enabled="<?= $comparisonResults ? "true" : "false" ?>"
                         class="divide-y
                                divide-gray-100"
                     >
@@ -845,6 +875,102 @@ unset($_SESSION["sales_comparison_results"], $_SESSION["sales_comparison_error"]
 ============================================================ -->
 
 <script>
+
+const comparisonResultsBody = document.getElementById("comparisonResultsBody");
+const comparisonRefreshError = document.getElementById("comparisonRefreshError");
+
+function formatComparisonAmount(amount) {
+    return amount === null || amount === undefined
+        ? "—"
+        : Number(amount).toLocaleString("en-US", {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2
+        });
+}
+
+function formatComparisonDate(dateValue) {
+    const [year, month, day] = dateValue.split("-").map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric"
+    });
+}
+
+function renderComparisonResults(results) {
+    comparisonResultsBody.replaceChildren();
+
+    if (!results.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 6;
+        cell.className = "px-6 py-10 text-center text-gray-400";
+        cell.textContent = "No comparison results yet.";
+        row.appendChild(cell);
+        comparisonResultsBody.appendChild(row);
+        return;
+    }
+
+    results.forEach(comparison => {
+        const row = document.createElement("tr");
+        const dateCell = document.createElement("td");
+        dateCell.className = "px-6 py-4 font-medium text-gray-800";
+        dateCell.textContent = formatComparisonDate(comparison.date)
+            + (comparison.date_to ? ` - ${formatComparisonDate(comparison.date_to)}` : "");
+        row.appendChild(dateCell);
+
+        const metricCell = document.createElement("td");
+        metricCell.className = "px-6 py-4 font-medium text-gray-700";
+        metricCell.textContent = comparison.metric;
+        row.appendChild(metricCell);
+
+        [comparison.excel_total, comparison.nooma_total, comparison.difference].forEach(amount => {
+            const cell = document.createElement("td");
+            cell.className = "px-6 py-4 text-right tabular-nums";
+            cell.textContent = formatComparisonAmount(amount);
+            row.appendChild(cell);
+        });
+
+        const statusCell = document.createElement("td");
+        statusCell.className = "px-6 py-4 text-center";
+        const status = document.createElement("span");
+        status.className = "font-semibold " + (
+            comparison.status === "Matched"
+                ? "text-green-700"
+                : (comparison.status === "Difference" ? "text-amber-700" : "text-gray-500")
+        );
+        status.textContent = comparison.status;
+        statusCell.appendChild(status);
+        row.appendChild(statusCell);
+        comparisonResultsBody.appendChild(row);
+    });
+}
+
+async function refreshComparisonResults() {
+    try {
+        const refreshUrl = new URL(window.location.href);
+        refreshUrl.search = "?refresh_comparison=1";
+        const response = await fetch(refreshUrl, {
+            headers: { "Accept": "application/json" },
+            cache: "no-store"
+        });
+        const payload = await response.json();
+        if (!response.ok || !payload.success || !Array.isArray(payload.results)) {
+            throw new Error(payload.message || "Could not refresh Nooma comparison values.");
+        }
+        renderComparisonResults(payload.results);
+        comparisonRefreshError.classList.add("hidden");
+    } catch (error) {
+        comparisonRefreshError.textContent =
+            "Could not refresh Nooma totals. The displayed values may be out of date.";
+        comparisonRefreshError.classList.remove("hidden");
+        console.error("Live sales comparison refresh failed:", error);
+    }
+}
+
+if (comparisonResultsBody.dataset.refreshEnabled === "true") {
+    window.setInterval(refreshComparisonResults, 10000);
+}
 
 const dropZone =
     document.getElementById("dropZone");
@@ -1222,7 +1348,7 @@ function dailySalesFromWorkbook(workbook, filename) {
             ]));
             let reportAmountCount = 0;
             let currentDate = null;
-            for (let priorRowIndex = 0; priorRowIndex < headerRow; priorRowIndex += 1) {
+            for (let priorRowIndex = 0; priorRowIndex < headerRow; priorRowIndex += 1) {    
                 const priorDates = new Set((rows[priorRowIndex] || [])
                     .map(parseSingleReportDate)
                     .filter(Boolean));

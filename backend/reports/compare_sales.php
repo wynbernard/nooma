@@ -18,10 +18,7 @@ $grandTotalExpression = "CASE WHEN JSON_VALID(dr.notes) THEN COALESCE(
             CAST(JSON_UNQUOTE(JSON_EXTRACT(dr.notes, '$.grandTotal')) AS DECIMAL(12,2)),
             dr.telegram_declared_total
         ) ELSE dr.telegram_declared_total END";
-$totalDiscountExpression = "CASE WHEN JSON_VALID(dr.notes) THEN COALESCE(
-            CAST(JSON_UNQUOTE(JSON_EXTRACT(dr.notes, '$.totalSalesDeduction')) AS DECIMAL(12,2)),
-            0
-        ) ELSE 0 END";
+$totalDiscountExpression = "COALESCE(discounts.total_discount, 0)";
 $serviceChargeExpression = "CASE WHEN JSON_VALID(dr.notes) THEN COALESCE(
             CAST(JSON_UNQUOTE(JSON_EXTRACT(dr.notes, '$.serviceCharge')) AS DECIMAL(12,2)),
             service_charges.service_charge_total,
@@ -33,6 +30,17 @@ $serviceChargeJoin = "LEFT JOIN (
         WHERE sales_type = 'service_charge'
         GROUP BY report_id
     ) service_charges ON service_charges.report_id = dr.report_id";
+$discountJoin = "LEFT JOIN (
+        SELECT report_id, SUM(amount) AS total_discount
+        FROM report_deductions
+        WHERE deduction_type = 'discount'
+        GROUP BY report_id
+    ) discounts ON discounts.report_id = dr.report_id";
+$posOnlyCondition = "AND UPPER(TRIM(CASE WHEN JSON_VALID(dr.notes) THEN COALESCE(
+            JSON_UNQUOTE(JSON_EXTRACT(dr.notes, '$.saleChannel')),
+            ''
+        ) ELSE '' END)) <> 'NON POS'
+        AND UPPER(TRIM(COALESCE(dr.shift_name, ''))) NOT LIKE 'NON POS%'";
 $metricDefinitions = [
     "grand_total" => ["label" => "Excel Total Sale / Nooma Grand Total", "expression" => $grandTotalExpression],
     "total_discount" => ["label" => "Total Discount", "expression" => $totalDiscountExpression],
@@ -104,7 +112,10 @@ if ($periodRows) {
             COUNT(*) AS report_count
         FROM daily_reports dr
         {$serviceChargeJoin}
-        WHERE dr.status <> 'voided' AND dr.report_date BETWEEN ? AND ?");
+        {$discountJoin}
+        WHERE dr.status <> 'voided'
+            {$posOnlyCondition}
+            AND dr.report_date BETWEEN ? AND ?");
     if (!$statement) {
         error_log("Sales comparison range query preparation failed: " . mysqli_error($conn));
         $_SESSION["sales_comparison_error"] = "Could not load Nooma comparison values. Please try again.";
@@ -178,7 +189,10 @@ $sql = "SELECT
         SUM({$serviceChargeExpression}) AS service_charge
     FROM daily_reports dr
     {$serviceChargeJoin}
-    WHERE dr.status <> 'voided' AND dr.report_date IN ({$placeholders})
+    {$discountJoin}
+    WHERE dr.status <> 'voided'
+        {$posOnlyCondition}
+        AND dr.report_date IN ({$placeholders})
     GROUP BY dr.report_date";
 $statement = mysqli_prepare($conn, $sql);
 
