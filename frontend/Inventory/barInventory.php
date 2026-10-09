@@ -10,7 +10,6 @@ include "../../backend/inventory/bar_inventory.php";
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($page_title) ?> - Nooma</title>
-
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
@@ -92,33 +91,30 @@ include "../../backend/inventory/bar_inventory.php";
                 </div>
             </div>
         </div>
-
-        <!-- INVENTORY OVERVIEW CHART -->
-        <div class="bg-white border border-gray-200/80 rounded-2xl p-6 shadow-xs mb-6">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-                <div>
-                    <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">Stock Analytics</p>
-                    <h3 class="text-lg font-bold text-gray-900 tracking-tight mt-0.5">Top Inventory Quantities</h3>
-                    <p class="text-sm text-gray-500 mt-0.5">Visual representation of current item quantities</p>
-                </div>
-            </div>
-            <div class="relative w-full overflow-x-auto pb-3">
-                <div id="chartContainerInner" class="relative h-72">
-                    <canvas id="inventoryOverviewChart"></canvas>
-                </div>
-            </div>
-        </div>
-
         <!-- INVENTORY TABLE -->
         <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
             <!-- HEADER WITH SEARCH & ADD BUTTON -->
             <div class="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h3 class="text-lg font-bold text-gray-900">Inventory Items</h3>
-                    <p class="text-sm text-gray-500 mt-1">Detailed list of stock registry and flow</p>
+                    <h3 class="text-lg font-bold text-gray-900"><?= htmlspecialchars($page_title) ?></h3>
+                    <p class="text-sm text-gray-500 mt-1"><?= htmlspecialchars($page_description) ?></p>
                 </div>
 
                 <div class="flex flex-col sm:flex-row items-center gap-3">
+                    <form method="get" class="flex w-full sm:w-auto items-center gap-2">
+                        <label for="inventoryDateFilter" class="text-sm text-gray-600 whitespace-nowrap">Date:</label>
+                        <input
+                            type="date"
+                            id="inventoryDateFilter"
+                            name="inventory_date"
+                            value="<?= htmlspecialchars($inventoryDateFilter, ENT_QUOTES, "UTF-8") ?>"
+                            onchange="this.form.submit()"
+                            class="w-full sm:w-auto px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                        <?php if ($inventoryDateFilter !== ""): ?>
+                            <a href="<?= htmlspecialchars(strtok($_SERVER["REQUEST_URI"], "?"), ENT_QUOTES, "UTF-8") ?>" class="text-sm text-blue-600 hover:underline whitespace-nowrap">All dates</a>
+                        <?php endif; ?>
+                    </form>
                     <!-- SEARCH BOX -->
                     <div class="relative w-full sm:w-72">
                         <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-400">
@@ -144,7 +140,6 @@ include "../../backend/inventory/bar_inventory.php";
                     <thead class="bg-gray-50 border-b border-gray-200">
                         <tr>
                             <th class="text-left px-6 py-4 font-semibold text-gray-600">Item Description</th>
-                            <th class="text-left px-6 py-4 font-semibold text-gray-600">Type</th>
                             <th class="text-center px-6 py-4 font-semibold text-gray-600">Quantity</th>
                             <th class="text-center px-6 py-4 font-semibold text-gray-600">Unit</th>
                             <th class="text-center px-6 py-4 font-semibold text-gray-600">Beginning</th>
@@ -159,21 +154,20 @@ include "../../backend/inventory/bar_inventory.php";
                     <tbody id="inventoryTableBody" class="divide-y divide-gray-100">
                         <?php if (empty($inventoryItems)): ?>
                             <tr id="noInventoryRow" data-inventory-empty-row>
-                                <td colspan="11" class="px-6 py-8 text-center text-gray-500">No inventory items found.</td>
+                                <td colspan="12" class="px-6 py-8 text-center text-gray-500">No inventory items found.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($inventoryItems as $item): ?>
-                                <tr class="inventory-row hover:bg-gray-50" data-inventory-id="<?= (int) $item["inventory_id"] ?>" data-quantity="<?= htmlspecialchars((string) $item["quantity"], ENT_QUOTES, "UTF-8") ?>" data-created-at="<?= htmlspecialchars((string) $item["created_at"], ENT_QUOTES, "UTF-8") ?>">
+                                <tr class="inventory-row hover:bg-gray-50" data-inventory-id="<?= (int) $item["inventory_id"] ?>" data-inventory-date="<?= htmlspecialchars((string) $item["inventory_date"], ENT_QUOTES, "UTF-8") ?>" data-quantity="<?= htmlspecialchars((string) $item["quantity"], ENT_QUOTES, "UTF-8") ?>" data-created-at="<?= htmlspecialchars((string) $item["created_at"], ENT_QUOTES, "UTF-8") ?>">
                                     <td class="px-6 py-4">
                                         <div class="font-semibold text-gray-900 item-desc"><?= htmlspecialchars($item["item_description"]) ?></div>
-                                        <div class="text-xs text-gray-500">Counted by: <span class="counted-by"><?= htmlspecialchars($item["counted_by"]) ?></span> (<span class="inv-date"><?= htmlspecialchars($item["inventory_date"]) ?></span>)</div>
+                                        <div class="text-xs text-gray-500">Inventory date: <?= htmlspecialchars((string) $item["inventory_date"]) ?></div>
                                     </td>
-                                    <td class="px-6 py-4 text-gray-600 item-type"><?= htmlspecialchars($item["type"]) ?></td>
                                     <td class="px-6 py-4 text-center font-bold text-gray-900"><?= number_format((float) $item["quantity"], 2) ?></td>
                                     <td class="px-6 py-4 text-center text-gray-600 item-unit"><?= htmlspecialchars($item["unit"]) ?></td>
                                     <td class="px-6 py-4 text-center text-gray-600"><?= number_format((float) $item["beginning"], 2) ?></td>
-                                    <td class="px-6 py-4 text-center text-green-600 font-medium">+<?= number_format((float) $item["purchases"], 2) ?></td>
-                                    <td class="px-6 py-4 text-center text-red-600 font-medium">-<?= number_format((float) $item["sold"], 2) ?></td>
+                                    <td class="px-6 py-4 text-center text-green-600 font-medium">+<?= number_format((float) $item["sold"], 2) ?></td>
+                                    <td class="px-6 py-4 text-center text-red-600 font-medium">-<?= number_format((float) $item["purchases"], 2) ?></td>
                                     <td class="px-6 py-4 text-center text-orange-600 font-medium">-<?= number_format((float) $item["used"], 2) ?></td>
                                     <td class="px-6 py-4 text-center font-bold text-blue-600"><?= number_format((float) $item["ending"], 2) ?></td>
                                     <td class="px-6 py-4 text-gray-600 text-xs italic item-remarks"><?= htmlspecialchars($item["remarks"] ?? "—") ?></td>
@@ -195,7 +189,7 @@ include "../../backend/inventory/bar_inventory.php";
                             <?php endforeach; ?>
                         <?php endif; ?>
                         <tr id="noSearchResultsRow" class="hidden">
-                            <td colspan="11" class="px-6 py-8 text-center text-gray-500">No matching inventory items found.</td>
+                            <td colspan="12" class="px-6 py-8 text-center text-gray-500">No matching inventory items found.</td>
                         </tr>
                     </tbody>
                 </table>
@@ -206,7 +200,7 @@ include "../../backend/inventory/bar_inventory.php";
 </div>
 
 <!-- INCLUDE THE SEPARATED MODAL COMPONENT -->
-<?php include "barInventoryModal.php"; ?>
+<?php include "KitchenInventoryModal.php"; ?>
 
 <script>
 // Modal Toggle Functions
@@ -223,6 +217,7 @@ function openUpdateModal(item) {
         'inventory_id',
         'inventory_date',
         'counted_by',
+        'department',
         'type',
         'item_description',
         'quantity',
@@ -301,6 +296,8 @@ if (searchInput) {
 
 // Chart Script
 const inventoryChartData = <?= json_encode($inventoryChartData, JSON_UNESCAPED_SLASHES) ?>;
+const currentInventoryDepartment = <?= json_encode($inventoryDepartment, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+const currentInventoryDateFilter = <?= json_encode($inventoryDateFilter, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
 const inventoryOverviewChart = document.getElementById("inventoryOverviewChart");
 const chartContainerInner = document.getElementById("chartContainerInner");
 let inventoryOverviewChartInstance = null;
@@ -387,6 +384,7 @@ function createInventoryRow(item) {
     const row = document.createElement('tr');
     row.className = 'inventory-row hover:bg-gray-50';
     row.dataset.inventoryId = item.inventory_id;
+    row.dataset.inventoryDate = item.inventory_date;
     row.dataset.quantity = item.quantity;
     row.dataset.createdAt = item.created_at || new Date().toISOString();
 
@@ -408,6 +406,7 @@ function createInventoryRow(item) {
     metadata.append(inventoryDate, ')');
     descriptionCell.append(description, metadata);
     row.appendChild(descriptionCell);
+    row.appendChild(createInventoryCell('px-6 py-4 text-gray-600 item-department', item.department));
     row.appendChild(createInventoryCell('px-6 py-4 text-gray-600 item-type', item.type));
     row.appendChild(createInventoryCell('px-6 py-4 text-center font-bold text-gray-900', formatInventoryNumber(item.quantity)));
     row.appendChild(createInventoryCell('px-6 py-4 text-center text-gray-600 item-unit', item.unit));
@@ -471,7 +470,8 @@ function updateInventoryTable(item, action) {
     const existingRow = Array.from(tableBody.querySelectorAll('.inventory-row'))
         .find(row => Number(row.dataset.inventoryId) === Number(item.inventory_id));
 
-    if (action === 'delete') {
+    if (action === 'delete' || item.department !== currentInventoryDepartment
+        || (currentInventoryDateFilter && item.inventory_date !== currentInventoryDateFilter)) {
         existingRow?.remove();
     } else {
         if (action === 'update' && existingRow) {
@@ -493,7 +493,7 @@ function updateInventoryTable(item, action) {
             emptyRow.id = 'noInventoryRow';
             emptyRow.dataset.inventoryEmptyRow = '';
             const emptyCell = createInventoryCell('px-6 py-8 text-center text-gray-500', 'No inventory items found.');
-            emptyCell.colSpan = 11;
+            emptyCell.colSpan = 12;
             emptyRow.appendChild(emptyCell);
             tableBody.prepend(emptyRow);
         }

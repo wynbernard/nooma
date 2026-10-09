@@ -16,6 +16,13 @@
             <input type="hidden" name="inventory_action" value="add">
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Department</label>
+                    <select name="department" required class="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="Kitchen" <?= $inventoryDepartment === "Kitchen" ? "selected" : "" ?>>Kitchen</option>
+                        <option value="Bar" <?= $inventoryDepartment === "Bar" ? "selected" : "" ?>>Bar</option>
+                    </select>
+                </div>
+                <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Inventory Date</label>
                     <input type="date" name="inventory_date" value="<?= date('Y-m-d') ?>" required class="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
@@ -99,6 +106,13 @@
             <input type="hidden" name="inventory_id" id="update_inventory_id">
 
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Department</label>
+                    <select name="department" id="update_department" required class="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="Kitchen">Kitchen</option>
+                        <option value="Bar">Bar</option>
+                    </select>
+                </div>
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-gray-500 mb-1">Inventory Date</label>
                     <input type="date" name="inventory_date" id="update_inventory_date" required class="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">

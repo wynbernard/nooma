@@ -226,6 +226,9 @@ INSERT INTO `expense_categories` (`expense_category_id`, `category_name`, `is_ac
 
 CREATE TABLE `inventory` (
   `inventory_id` int(11) NOT NULL,
+  `inventory_date` date NOT NULL,
+  `counted_by` varchar(100) NOT NULL,
+  `department` enum('Kitchen','Bar') NOT NULL DEFAULT 'Bar',
   `type` varchar(100) NOT NULL,
   `item_description` varchar(255) NOT NULL,
   `quantity` decimal(10,2) DEFAULT 0.00,

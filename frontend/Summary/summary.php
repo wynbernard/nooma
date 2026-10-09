@@ -219,6 +219,9 @@ $cardSalesTotal = 0.0;
 foreach (["GCash + QR PH", "Gcash + QRPH", "PayMaya", "AMEX", "Visa", "Mastercard", "BancNet", "JCB"] as $paymentMethod) {
     $cardSalesTotal += (float) ($payments[$paymentMethod] ?? 0.0);
 }
+$otherCashTotal = $payments["id_13"] ?? 0.0;
+$mayaTerminalSalesTotal = $payments["id_14"] ?? 0.0;
+$cardSalesTotal += $mayaTerminalSalesTotal;
 $ownerTotal = array_sum($ownerAccounts);
 $nonPosOwnerTotal = array_sum($nonPosOwnerAccounts) + array_sum($nonPosUnpaidOwnerAmounts);
 $ownerAccountTotal = $ownerTotal - $nonPosOwnerTotal;
@@ -239,12 +242,11 @@ if ($nonPos < 0) {
 }
 $otherPaymentsTotal = $money($payloadTotals["paidAccounts"] ?? 0)
     + $money($payloadTotals["advancePayments"] ?? 0)
-    + ($payments["id_13"] ?? 0)  // Other Cash
-    + ($payments["id_14"] ?? 0)  // Card (Maya Terminal)
     + ($payments["id_15"] ?? 0)  // Direct BT BPI Nooma (Other)
     + ($payments["id_16"] ?? 0)  // Direct BT EastWest Nooma (Other)
     + ($payments["id_17"] ?? 0)  // Gift Check (Other)
     + ($payments["id_18"] ?? 0); // Cheques (Other)
+$depositOtherPaymentsTotal = $otherCashTotal + $mayaTerminalSalesTotal + $otherPaymentsTotal;
 $posBreakdownTotal = $cashSalesTotal
     + $cardSalesTotal
     + $money($payloadTotals["bpi"] ?? 0)
@@ -330,7 +332,7 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                 </th>
                                 <th colspan="2" class="bg-emerald-200 px-3 py-2 text-right">
                                     <div class="text-[10px] text-gray-700 font-bold">TOTAL COLLECTION</div>
-                                    <div class="text-sm font-bold text-emerald-900"><?= peso($posCashRemittedTotal + $nonPosCashRemitted + $otherPaymentsTotal + $cardSalesTotal + ($payloadTotals["bpi"] ?? 0) + ($payloadTotals["easwest"] ?? 0) + ($payloadTotals["giftcheck"] ?? 0) + ($payloadTotals["cheque"] ?? 0) + $grabNet) ?></div>
+                                    <div class="text-sm font-bold text-emerald-900"><?= peso($posCashRemittedTotal + $nonPosCashRemitted + $otherCashTotal + $otherPaymentsTotal + $cardSalesTotal + ($payloadTotals["bpi"] ?? 0) + ($payloadTotals["easwest"] ?? 0) + ($payloadTotals["giftcheck"] ?? 0) + ($payloadTotals["cheque"] ?? 0) + $grabNet) ?></div>
                                 </th>
                             </tr>
                             <tr class="border-b-2 border-gray-800 bg-gray-100">
@@ -357,10 +359,10 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                     <?= peso($nonPosCashRemitted) ?>
                                 </td> 
                                <td colspan="3" class="border-r border-gray-200 text-right">
-                                    <?= peso($otherPaymentsTotal) ?>
+                                    <?= peso($otherCashTotal) ?>
                                 </td>
                                 <td class="px-4 py-1.5 text-right bg-emerald-50 font-semibold">
-                                    <?= peso($posCashRemittedTotal + $nonPosCashRemitted +  $otherPaymentsTotal) ?>
+                                    <?= peso($posCashRemittedTotal + $nonPosCashRemitted + $otherCashTotal) ?>
                                 </td>
                                 
                             </tr>
@@ -374,7 +376,9 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                 <td class="px-4 py-1.5 text-right font-semibold border-r border-gray-200">
                                     <?= peso($nonPosCardSalesTotal) ?>
                                 </td>
-                                <td colspan="3" class="border-r border-gray-200"></td>
+                                <td colspan="3" class="border-r border-gray-200 text-right">
+                                    <?= peso($mayaTerminalSalesTotal) ?>
+                                </td>
                                 <td class="px-4 py-1.5 text-right bg-emerald-50 font-semibold">
                                     <?= peso($cardSalesTotal) ?>
                                 </td>
@@ -389,9 +393,11 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                 <td class="px-4 py-1.5 text-right font-semibold border-r border-gray-200">
                                     <?= peso($nonPosBreakdownTotals["bpi"] ?? 0) ?>
                                 </td>
-                                <td colspan="3" class="border-r border-gray-200"></td>
+                                <td colspan="3" class="border-r border-gray-200 text-right">
+                                    <?= peso($payments["id_15"] ?? 0) ?>
+                                </td>
                                 <td class="px-4 py-1.5 text-right bg-emerald-50 font-semibold">
-                                    <?= peso($payloadTotals["bpi"] ?? 0) ?>
+                                    <?= peso(($payloadTotals["bpi"] ?? 0) + ($payments["id_15"] ?? 0)) ?>
                                 </td>
                             </tr>
                              <tr class="border-b border-gray-200">
@@ -404,9 +410,11 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                 <td class="px-4 py-1.5 text-right font-semibold border-r border-gray-200">
                                     <?= peso($nonPosBreakdownTotals["easwest"] ?? 0) ?>
                                 </td>
-                                <td colspan="3" class="border-r border-gray-200"></td>
+                                <td colspan="3" class="border-r border-gray-200 text-right">
+                                    <?= peso($payments["id_16"] ?? 0) ?>
+                                </td>
                                 <td class="px-4 py-1.5 text-right bg-emerald-50 font-semibold">
-                                    <?= peso($payloadTotals["easwest"] ?? 0) ?>
+                                    <?= peso(($payloadTotals["easwest"] ?? 0) + ($payments["id_16"] ?? 0)) ?>
                                 </td>
                             </tr>
                              <tr class="border-b border-gray-200">
@@ -419,9 +427,11 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                 <td class="px-4 py-1.5 text-right font-semibold border-r border-gray-200">
                                     <?= peso($nonPosBreakdownTotals["giftcheck"] ?? 0) ?>
                                 </td>
-                                <td colspan="3" class="border-r border-gray-200"></td>
+                                <td colspan="3" class="border-r border-gray-200 text-right">
+                                    <?= peso($payments["id_17"] ?? 0) ?>
+                                </td>
                                 <td class="px-4 py-1.5 text-right bg-emerald-50 font-semibold">
-                                    <?= peso($payloadTotals["giftcheck"] ?? 0) ?>
+                                    <?= peso(($payloadTotals["giftcheck"] ?? 0) + ($payments["id_17"] ?? 0)) ?>
                                 </td>
                             </tr>
                             <tr class="border-b border-gray-200">
@@ -434,9 +444,11 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                 <td class="px-4 py-1.5 text-right font-semibold border-r border-gray-200">
                                     <?= peso($nonPosBreakdownTotals["cheque"] ?? 0) ?>
                                 </td>
-                                <td colspan="3" class="border-r border-gray-200"></td>
+                                <td colspan="3" class="border-r border-gray-200 text-right">
+                                    <?= peso($payments["id_18"] ?? 0) ?>
+                                </td>
                                 <td class="px-4 py-1.5 text-right bg-emerald-50 font-semibold">
-                                    <?= peso($payloadTotals["cheque"] ?? 0) ?>
+                                    <?= peso(($payloadTotals["cheque"] ?? 0) + ($payments["id_18"] ?? 0)) ?>
                                 </td>
                             </tr>
 
@@ -549,7 +561,7 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
             <section class="bg-white border-2 border-gray-800 p-4 shadow-sm h-fit space-y-4">
                 <div class="flex justify-between items-center border-b pb-2">
                     <span class="text-xs font-bold text-gray-700">FOR DEPOSIT:</span>
-                    <span class="text-sm font-bold text-emerald-700"><?= peso($posCashRemittedTotal + $nonPosCashRemitted +  $otherPaymentsTotal) ?></span>
+                    <span class="text-sm font-bold text-emerald-700"><?= peso($posCashRemittedTotal + $nonPosCashRemitted + $depositOtherPaymentsTotal) ?></span>
                 </div>
                 <div class="flex justify-between items-center border-b pb-2">
                     <span class="text-xs font-bold text-gray-700">UNSETTLED:</span>

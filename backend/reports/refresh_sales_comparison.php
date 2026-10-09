@@ -137,7 +137,9 @@ function refresh_sales_comparison(mysqli $conn, array $comparisons): array
     $metricFields = [
         "Excel Total Sale / Nooma Grand Total" => "grand_total",
         "Total Discount" => "total_discount",
-        "Service Charge" => "service_charge"
+        "Service Charge" => "service_charge",
+        "Product Total Sales / Nooma Grand Total less Service Charge" => "grand_total_less_service_charge",
+        "Product Total Discount / Nooma Total Discount" => "total_discount"
     ];
     foreach ($comparisons as &$comparison) {
         if (!is_array($comparison) || !isset($metricFields[$comparison["metric"] ?? ""])) {
@@ -152,7 +154,9 @@ function refresh_sales_comparison(mysqli $conn, array $comparisons): array
         $hasNoomaTotal = $noomaTotals !== null && (int) ($noomaTotals["report_count"] ?? 0) > 0;
         $excelTotal = $comparison["excel_total"] ?? null;
         $noomaTotal = $hasNoomaTotal
-            ? (float) $noomaTotals[$metricFields[$comparison["metric"]]]
+            ? ($metricFields[$comparison["metric"]] === "grand_total_less_service_charge"
+                ? (float) $noomaTotals["grand_total"] - (float) $noomaTotals["service_charge"]
+                : (float) $noomaTotals[$metricFields[$comparison["metric"]]])
             : null;
         $difference = $excelTotal === null || $noomaTotal === null
             ? null

@@ -208,14 +208,16 @@ $cardSalesTotal = 0.0;
 foreach (["GCash + QR PH", "Gcash + QRPH", "PayMaya", "Maya Terminal", "AMEX", "Visa", "Mastercard", "BancNet", "JCB"] as $cardMethod) {
     $cardSalesTotal += (float) ($payments[$cardMethod] ?? 0);
 }
+$otherCashTotal = $payments["id_13"] ?? 0;
+$mayaTerminalSalesTotal = $payments["id_14"] ?? 0;
+$cardSalesTotal += $mayaTerminalSalesTotal;
 $otherPaymentsTotal = ($payloadTotals["paidAccounts"] ?? 0)
     + ($payloadTotals["advancePayments"] ?? 0)
-    + ($payments["id_13"] ?? 0)
-    + ($payments["id_14"] ?? 0)
     + ($payments["id_15"] ?? 0)
     + ($payments["id_16"] ?? 0)
     + ($payments["id_17"] ?? 0)
     + ($payments["id_18"] ?? 0);
+$depositOtherPaymentsTotal = $otherCashTotal + $mayaTerminalSalesTotal + $otherPaymentsTotal;
 $nonPos = $nonPosCashRemitted
     + $nonPosCardSalesTotal
     + $money($nonPosBreakdownTotals["bpi"] ?? 0)
@@ -238,7 +240,7 @@ $totalPos = $posCashRemittedTotal
     + $posUnpaidNonOwnerTotal
     + $posShortOver;
 $totalGrossSales = $totalPos + $nonPos + $grabNet;
-$forDeposit = $posCashRemittedTotal + $nonPosCashRemitted + $otherPaymentsTotal;
+$forDeposit = $posCashRemittedTotal + $nonPosCashRemitted + $depositOtherPaymentsTotal;
 $unsettled = $weekendCardSales;
 
 function peso(float $amount): string {
@@ -304,7 +306,7 @@ th, td { border: 1px solid #777; padding: 6px 8px; font-size: 11px; font-family:
         </th>
         <th colspan="2" class="collection" style="text-align: right;">
             <div style="font-size: 9px; color: #555;">TOTAL COLLECTION</div>
-            <div style="font-size: 14px; color: #116633;"><?= peso($posCashRemittedTotal + $nonPosCashRemitted + $otherPaymentsTotal + $cardSalesTotal + ($payloadTotals["bpi"] ?? 0) + ($payloadTotals["easwest"] ?? 0) + ($payloadTotals["giftcheck"] ?? 0) + ($payloadTotals["cheque"] ?? 0) + $grabNet) ?></div>
+            <div style="font-size: 14px; color: #116633;"><?= peso($posCashRemittedTotal + $nonPosCashRemitted + $otherCashTotal + $otherPaymentsTotal + $cardSalesTotal + ($payloadTotals["bpi"] ?? 0) + ($payloadTotals["easwest"] ?? 0) + ($payloadTotals["giftcheck"] ?? 0) + ($payloadTotals["cheque"] ?? 0) + $grabNet) ?></div>
         </th>
     </tr>
     <tr><th colspan="8" class="section" style="text-align: center;"><?= htmlspecialchars(strtoupper(date("F j, Y", strtotime($dateStart)) . " TO " . date("F j, Y", strtotime($dateEnd)))) ?></th></tr>
@@ -312,7 +314,7 @@ th, td { border: 1px solid #777; padding: 6px 8px; font-size: 11px; font-family:
     <tr><td colspan="8" class="section">BREAKDOWN:</td></tr>
     <?php
     $exportRows = [
-        ["CASH SALES", $posCashRemittedTotal, $nonPosCashRemitted, $posCashRemittedTotal + $nonPosCashRemitted + $otherPaymentsTotal],
+        ["CASH SALES", $posCashRemittedTotal, $nonPosCashRemitted, $posCashRemittedTotal + $nonPosCashRemitted + $otherCashTotal],
         ["CARD SALE(MAYA TERMINAL)", $posCardSalesTotal, $nonPosCardSalesTotal, $cardSalesTotal],
         ["DIRECT BT BPI NOOMA", $posBreakdownTotals["bpi"] ?? 0, $nonPosBreakdownTotals["bpi"] ?? 0, $payloadTotals["bpi"] ?? 0],
         ["DIRECT BT EWB NOOMA", $posBreakdownTotals["easwest"] ?? 0, $nonPosBreakdownTotals["easwest"] ?? 0, $payloadTotals["easwest"] ?? 0],
@@ -385,8 +387,6 @@ th, td { border: 1px solid #777; padding: 6px 8px; font-size: 11px; font-family:
     <?php endforeach; ?>
     <?php
     $otherPaymentMethods = [
-        "id_13" => "OTHER CASH",
-        "id_14" => "CARD (MAYA TERMINAL)",
         "id_15" => "DIRECT BT BPI NOOMA (OTHER)",
         "id_16" => "DIRECT BT EASTWEST NOOMA (OTHER)",
         "id_17" => "GIFT CHECK (OTHER)",

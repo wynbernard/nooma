@@ -19,20 +19,35 @@ $full_name = $_SESSION["full_name"] ?? "Administrator";
 $username = $_SESSION["username"] ?? "admin";
 
 // Page information
-$page_title = "Inventory Management";
-$page_description = "Overview of your stock and inventory levels";
+$inventoryDepartment = basename((string) ($_SERVER["PHP_SELF"] ?? "")) === "kitchenInventory.php"
+    ? "Kitchen"
+    : "Bar";
+$page_title = $inventoryDepartment . " Inventory";
+$page_description = $inventoryDepartment . " stock register";
+$inventoryDateFilter = trim((string) ($_GET["inventory_date"] ?? ""));
 
 require_once __DIR__ . "/../../backend/config/database.php";
 
 $success_message = "";
 $error_message = "";
+if ($inventoryDateFilter !== "") {
+    $filterDateObject = DateTime::createFromFormat("!Y-m-d", $inventoryDateFilter);
+    if (!$filterDateObject || $filterDateObject->format("Y-m-d") !== $inventoryDateFilter) {
+        $inventoryDateFilter = "";
+        $error_message = "Choose a valid inventory date.";
+    }
+}
 $inventoryAction = (string) ($_POST["inventory_action"] ?? "");
 $inventoryId = 0;
+$department = trim((string) ($_POST["department"] ?? $inventoryDepartment));
+if (!in_array($department, ["Kitchen", "Bar"], true)) {
+    $error_message = "Choose either Kitchen or Bar for the inventory department.";
+}
 
 // ==========================================
 // 1. HANDLE ADD INVENTORY REQUEST
 // ==========================================
-if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_POST["add_inventory"]) || $inventoryAction === "add")) {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && $error_message === "" && (isset($_POST["add_inventory"]) || $inventoryAction === "add")) {
     $inventory_date = $_POST["inventory_date"];
     $counted_by = $_POST["counted_by"];
     $type = $_POST["type"];
@@ -45,10 +60,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_POST["add_inventory"]) || 
     $ending = (float) $_POST["ending"];
     $remarks = $_POST["remarks"];
 
-    $stmt = mysqli_prepare($conn, "INSERT INTO inventory (inventory_date, counted_by, type, item_description, quantity, unit, beginning, purchases, sold_used, ending, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt = mysqli_prepare($conn, "INSERT INTO inventory (inventory_date, counted_by, department, type, item_description, quantity, unit, beginning, purchases, sold_used, ending, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
     
     if ($stmt) {
-        mysqli_stmt_bind_param($stmt, "ssssdsdddds", $inventory_date, $counted_by, $type, $item_description, $quantity, $unit, $beginning, $purchases, $sold_used, $ending, $remarks);
+        mysqli_stmt_bind_param($stmt, "sssssdsdddds", $inventory_date, $counted_by, $department, $type, $item_description, $quantity, $unit, $beginning, $purchases, $sold_used, $ending, $remarks);
         
         if (mysqli_stmt_execute($stmt)) {
             $success_message = "Inventory item added successfully!";
@@ -65,7 +80,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_POST["add_inventory"]) || 
 // ==========================================
 // 2. HANDLE UPDATE INVENTORY REQUEST
 // ==========================================
-if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_POST["update_inventory"]) || $inventoryAction === "update")) {
+if ($_SERVER["REQUEST_METHOD"] === "POST" && $error_message === "" && (isset($_POST["update_inventory"]) || $inventoryAction === "update")) {
     $inventory_id = (int) $_POST["inventory_id"];
     $inventory_date = $_POST["inventory_date"];
     $counted_by = $_POST["counted_by"];
@@ -79,10 +94,10 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && (isset($_POST["update_inventory"]) 
     $ending = (float) $_POST["ending"];
     $remarks = $_POST["remarks"];
 
-    $stmt = mysqli_prepare($conn, "UPDATE inventory SET inventory_date = ?, counted_by = ?, type = ?, item_description = ?, quantity = ?, unit = ?, beginning = ?, purchases = ?, sold_used = ?, ending = ?, remarks = ? WHERE inventory_id = ?");
+    $stmt = mysqli_prepare($conn, "UPDATE inventory SET inventory_date = ?, counted_by = ?, department = ?, type = ?, item_description = ?, quantity = ?, unit = ?, beginning = ?, purchases = ?, sold_used = ?, ending = ?, remarks = ? WHERE inventory_id = ?");
     
     if ($stmt) {
-        mysqli_stmt_bind_param($stmt, "ssssdsddddsi", $inventory_date, $counted_by, $type, $item_description, $quantity, $unit, $beginning, $purchases, $sold_used, $ending, $remarks, $inventory_id);
+        mysqli_stmt_bind_param($stmt, "sssssdsddddsi", $inventory_date, $counted_by, $department, $type, $item_description, $quantity, $unit, $beginning, $purchases, $sold_used, $ending, $remarks, $inventory_id);
         
         if (mysqli_stmt_execute($stmt)) {
             $success_message = "Inventory item updated successfully!";
@@ -130,6 +145,7 @@ if (str_contains($_SERVER["HTTP_ACCEPT"] ?? "", "application/json") && $_SERVER[
             "inventory_id" => $inventoryAction === "add" ? $inventoryId : (int) ($_POST["inventory_id"] ?? 0),
             "inventory_date" => (string) ($_POST["inventory_date"] ?? ""),
             "counted_by" => (string) ($_POST["counted_by"] ?? ""),
+            "department" => $department,
             "type" => (string) ($_POST["type"] ?? ""),
             "item_description" => (string) ($_POST["item_description"] ?? ""),
             "quantity" => (float) ($_POST["quantity"] ?? 0),
@@ -157,13 +173,22 @@ if (str_contains($_SERVER["HTTP_ACCEPT"] ?? "", "application/json") && $_SERVER[
 // 4. FETCH DATA & COMPUTE METRICS
 // ==========================================
 $inventoryItems = [];
-$inventoryResult = mysqli_query($conn, "
-    SELECT inventory_id, inventory_date, counted_by, type, item_description, quantity, unit, 
+$inventoryStmt = mysqli_prepare($conn, "
+    SELECT inventory_id, inventory_date, counted_by, department, type, item_description, quantity, unit,
            beginning, purchases, sold_used, ending, remarks, created_at, updated_at 
-    FROM inventory 
+    FROM inventory
+    WHERE department = ? AND (? = '' OR inventory_date = ?)
     ORDER BY inventory_id DESC
 ");
 
+if (!$inventoryStmt) {
+    throw new RuntimeException("Could not prepare inventory query: " . mysqli_error($conn));
+}
+mysqli_stmt_bind_param($inventoryStmt, "sss", $inventoryDepartment, $inventoryDateFilter, $inventoryDateFilter);
+if (!mysqli_stmt_execute($inventoryStmt)) {
+    throw new RuntimeException("Could not load inventory: " . mysqli_stmt_error($inventoryStmt));
+}
+$inventoryResult = mysqli_stmt_get_result($inventoryStmt);
 if ($inventoryResult) {
     while ($row = mysqli_fetch_assoc($inventoryResult)) {
         $row["sold"] = $row["sold_used"] ?? 0.00; 
@@ -171,6 +196,7 @@ if ($inventoryResult) {
         $inventoryItems[] = $row;
     }
 }
+mysqli_stmt_close($inventoryStmt);
 
 $totalItemsCount = count($inventoryItems);
 $totalStockQuantity = array_sum(array_map(static fn (array $row): float => (float) $row["quantity"], $inventoryItems));

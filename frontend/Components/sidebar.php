@@ -227,7 +227,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
 
             <?php
             $inventoryPages = [
-                'inventory.php'
+                'inventory.php',
+                'barInventory.php',
+                'kitchenInventory.php'
             ];
 
             $inventoryActive = in_array($current_page, $inventoryPages);
@@ -292,9 +294,16 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 class="<?= $inventoryActive ? '' : 'hidden' ?> ml-7 mt-1 space-y-1"
             >
 
+                <a href="../Inventory/kitchenInventory.php"
+                   class="block px-3 py-2 rounded-lg text-xs
+                   <?= $current_page === 'kitchenInventory.php'
+                       ? 'bg-blue-50 text-blue-600 font-semibold'
+                       : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800' ?>">
+                    Kitchen Inventory
+                </a>
                 <a href="../Inventory/barInventory.php"
                    class="block px-3 py-2 rounded-lg text-xs
-                   <?= $current_page === 'inventory.php'
+                   <?= in_array($current_page, ['inventory.php', 'barInventory.php'], true)
                        ? 'bg-blue-50 text-blue-600 font-semibold'
                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800' ?>">
                     Bar Inventory

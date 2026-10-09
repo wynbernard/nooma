@@ -381,6 +381,15 @@ if ($employeeResult) {$employees = [];
                             Reset All Days
                         </button>
                     </form>
+                    <form method="get" action="../../backend/reports/tip_slip.php" target="_blank">
+                        <input type="hidden" name="start_date" value="<?= htmlspecialchars($start_date) ?>">
+                        <input type="hidden" name="end_date" value="<?= htmlspecialchars($end_date) ?>">
+                        <input type="hidden" name="additional_tip_amount" value="<?= htmlspecialchars((string) $additionalTipAmount) ?>">
+                        <button type="submit" class="px-3.5 py-2.5 rounded-xl bg-green-600 text-white text-sm font-semibold hover:bg-green-700 transition-colors flex items-center gap-2">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                            Download Slips
+                        </button>
+                    </form>
                 </div>
             </div>
             <div class="overflow-x-auto">
@@ -393,53 +402,62 @@ if ($employeeResult) {$employees = [];
                             <th class="px-5 py-3 text-right">Tip Amount</th>
                         </tr>
                     </thead>
-                    <tbody id="employeeTipBreakdownBody" class="divide-y">
-                        <?php if (empty($employeeTipBreakdown)): ?>
-                            <tr>
-                                <td colspan="5" class="px-5 py-8 text-center text-gray-500">
-                                    No active employees found for tip distribution.
-                                </td>
-                            </tr>
-                        <?php else: ?>
-                            <?php foreach ($employeeTipBreakdown as$employee): ?>
-                                <tr class="hover:bg-gray-50" data-employee-tip-row>
-                                    <td class="px-5 py-4 font-semibold">
-                                        <?= htmlspecialchars($employee["full_name"]) ?>
-                                    </td>
-                                    <td class="px-5 py-4 text-right">
-                                        <form method="post" data-update-employee-days class="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-2">
-                                            <input type="hidden" name="action" value="update_employee_days">
-                                            <input type="hidden" name="user_id" value="<?= (int) $employee["user_id"] ?>">
-                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION["tip_csrf_token"]) ?>">
-                                            <input type="hidden" name="start_date" value="<?= htmlspecialchars($start_date) ?>">
-                                            <input type="hidden" name="end_date" value="<?= htmlspecialchars($end_date) ?>">
-                                            <input type="hidden" name="additional_tip_amount" value="<?= htmlspecialchars((string) $additionalTipAmount) ?>">
-                                            <input
-                                                type="number"
-                                                name="number_of_days"
-                                                data-employee-days
-                                                min="0"
-                                                step="1"
-                                                required
-                                                value="<?= (int) $employee["number_of_days"] ?>"
-                                                aria-label="Number of days for <?= htmlspecialchars($employee["full_name"]) ?>"
-                                                class="w-24 border border-gray-200 rounded-lg px-2.5 py-2 text-right"
-                                            >
-                                            <button type="submit" class="px-3 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700">
-                                                Update
-                                            </button>
-                                        </form>
-                                    </td>
-                                    <td class="px-5 py-4 text-right employee-share-percent">
-                                        <?= number_format($employee["share_percent"], 2) ?>%
-                                    </td>
-                                    <td class="px-5 py-4 text-right font-semibold text-green-700 employee-tip-amount">
-                                        ₱<?= number_format($employee["tip_amount"], 2) ?>
+                    <?php
+                        // Sort employees alphabetically by Last Name if the array is not empty
+                        if (!empty($employeeTipBreakdown)) {
+                            usort($employeeTipBreakdown, function($a, $b) {
+                                $nameAParts = explode(" ", trim($a["full_name"]));
+                                $nameBParts = explode(" ", trim($b["full_name"]));
+                                $lastNameA = array_pop($nameAParts);
+                                $lastNameB = array_pop($nameBParts);
+                                return strcasecmp($lastNameA, $lastNameB);
+                            });
+                        }
+                        ?>
+
+                        <tbody id="employeeTipBreakdownBody" class="divide-y">
+                            <?php if (empty($employeeTipBreakdown)): ?>
+                                <tr>
+                                    <td colspan="5" class="px-5 py-8 text-center text-gray-500">
+                                        No active employees found for tip distribution.
                                     </td>
                                 </tr>
-                            <?php endforeach; ?>
-                        <?php endif; ?>
-                    </tbody>
+                            <?php else: ?>
+                                <?php foreach ($employeeTipBreakdown as $employee): ?>
+                                    <tr class="hover:bg-gray-50" data-employee-tip-row>
+                                        <td class="px-5 py-4 font-semibold">
+                                            <?= htmlspecialchars($employee["full_name"]) ?>
+                                        </td>
+                                        <td class="px-5 py-4 text-right">
+                                            <form method="post" data-update-employee-days class="flex flex-col sm:flex-row items-end sm:items-center justify-end gap-2">
+                                                <input type="hidden" name="action" value="update_employee_days">
+                                                <input type="hidden" name="user_id" value="<?= (int) $employee["user_id"] ?>">
+                                                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION["tip_csrf_token"]) ?>">
+                                                <input type="hidden" name="start_date" value="<?= htmlspecialchars($start_date) ?>">
+                                                <input type="hidden" name="end_date" value="<?= htmlspecialchars($end_date) ?>">
+                                                <input type="hidden" name="additional_tip_amount" value="<?= htmlspecialchars((string) $additionalTipAmount) ?>">
+                                                <input
+                                                    type="number"
+                                                    name="number_of_days"
+                                                    data-employee-days
+                                                    placeholder="Enter Days"
+                                                    required
+                                                    value="<?= (int) $employee["number_of_days"] > 0 ? (int) $employee["number_of_days"] : '' ?>"
+                                                    aria-label="Number of days for <?= htmlspecialchars($employee["full_name"]) ?>"
+                                                    class="w-24 border border-gray-200 rounded-lg px-2.5 py-2 text-right"
+                                                >
+                                            </form>
+                                        </td>
+                                        <td class="px-5 py-4 text-right employee-share-percent">
+                                            <?= number_format($employee["share_percent"], 2) ?>%
+                                        </td>
+                                        <td class="px-5 py-4 text-right font-semibold text-green-700 employee-tip-amount">
+                                            ₱<?= number_format($employee["tip_amount"], 2) ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
                 </table>
             </div>
         </div>
@@ -640,14 +658,12 @@ async function refreshTipTotals() {
 
 const additionalTipAmountInput = document.getElementById('additional_tip_amount');
 additionalTipAmountInput.addEventListener('input', () => {
-    document.querySelectorAll('form[data-update-employee-days] input[name="additional_tip_amount"]')
+    document.querySelectorAll('form input[name="additional_tip_amount"]')
         .forEach(input => {
             input.value = additionalTipAmountInput.value;
         });
-        document.querySelector('form[data-reset-employee-days] input[name="additional_tip_amount"]').value =
-            additionalTipAmountInput.value;
-        updateTotalServiceCharge();
-    });
+    updateTotalServiceCharge();
+});
 document.querySelector('[data-reset-employee-days]').addEventListener('submit', async event => {
     event.preventDefault();
     if (!window.confirm('Reset the number of days for all active employees to zero?')) {
@@ -683,24 +699,27 @@ document.querySelector('[data-reset-employee-days]').addEventListener('submit', 
 
 document.querySelectorAll('[data-employee-days]').forEach(input => {
     input.addEventListener('input', updateTotalServiceCharge);
+    input.addEventListener('change', () => {
+        input.form.requestSubmit();
+    });
 });
 
 document.querySelectorAll('[data-update-employee-days]').forEach(form => {
     form.addEventListener('submit', async event => {
         event.preventDefault();
-        const button = form.querySelector('button[type="submit"]');
-        if (!button || button.disabled) {
+        const input = form.querySelector('[name="number_of_days"]');
+        if (!input || form.dataset.saving === 'true') {
             return;
         }
 
-        button.disabled = true;
-        const originalButtonText = button.textContent;
-        button.textContent = 'Saving...';
+        const formData = new FormData(form);
+        form.dataset.saving = 'true';
+        input.disabled = true;
 
         try {
             const response = await fetch(window.location.href, {
                 method: 'POST',
-                body: new FormData(form),
+                body: formData,
                 headers: { 'Accept': 'application/json' },
                 cache: 'no-store'
             });
@@ -709,13 +728,13 @@ document.querySelectorAll('[data-update-employee-days]').forEach(form => {
                 throw new Error(payload.message || 'Could not update employee number of days.');
             }
 
-            form.querySelector('[name="number_of_days"]').value = payload.number_of_days;
-            window.showToast(payload.message || 'Employee number of days updated.');
+            input.value = payload.number_of_days;
+            window.showToast(payload.message || 'Employee number of days saved.');
         } catch (error) {
-            window.showToast(error.message || 'Could not update employee number of days.', 'error');
+            window.showToast(error.message || 'Could not save employee number of days.', 'error');
         } finally {
-            button.disabled = false;
-            button.textContent = originalButtonText;
+            input.disabled = false;
+            delete form.dataset.saving;
         }
     });
 });

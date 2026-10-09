@@ -108,8 +108,6 @@ mysqli_stmt_close($reportsStmt);
 
 $reportDetails = $reports;
 $qrToJcbByReport = [];
-$paymentsByReport = [];
-$ownersByReport = [];
 $reportIds = array_map(static fn (array $report): int => (int) $report["report_id"], $reportDetails);
 if ($reportIds) {
     $reportIdList = implode(",", $reportIds);
@@ -122,56 +120,10 @@ if ($reportIds) {
     while ($row = mysqli_fetch_assoc($qrToJcbResult)) {
         $qrToJcbByReport[(int) $row["report_id"]] = (float) $row["total"];
     }
-    $paymentResult = mysqli_query($conn, "
-        SELECT rp.report_id, pm.method_name, SUM(rp.amount) AS total
-        FROM report_payments rp
-        INNER JOIN payment_methods pm ON pm.payment_method_id = rp.payment_method_id
-        WHERE rp.report_id IN ({$reportIdList})
-        GROUP BY rp.report_id, pm.payment_method_id, pm.method_name
-    ");
-    while ($row = mysqli_fetch_assoc($paymentResult)) {
-        $paymentsByReport[(int) $row["report_id"]][$row["method_name"]] = (float) $row["total"];
-    }
-    $ownerResult = mysqli_query($conn, "
-        SELECT report_id, SUM(amount) AS total
-        FROM report_accounts
-        WHERE report_id IN ({$reportIdList}) AND account_category = 'owners_account'
-        GROUP BY report_id
-    ");
-    while ($row = mysqli_fetch_assoc($ownerResult)) {
-        $ownersByReport[(int) $row["report_id"]] = (float) $row["total"];
-    }
 }
 $money = static function ($value): float {
     $value = str_replace(",", "", (string) $value);
     return is_numeric($value) ? (float) $value : 0.0;
-};
-$grossForReport = static function (array $report) use ($money, $paymentsByReport, $ownersByReport): float {
-    $payload = json_decode($report["notes"] ?? "", true);
-    $payload = is_array($payload) ? $payload : [];
-    $savedChannel = strtoupper(trim((string) ($payload["saleChannel"] ?? "")));
-    $channel = $savedChannel === "NON POS"
-        ? "NON POS"
-        : ((float) $report["pos_sales_total"] > 0 ? "POS" : "NON POS");
-    $payments = $paymentsByReport[(int) $report["report_id"]] ?? [];
-    $cashSales = (float) ($payments["Cash"] ?? ($payments["Cash Sales"] ?? 0.0));
-    $cardSales = 0.0;
-    foreach (["GCash + QR PH", "Gcash + QRPH", "PayMaya", "Maya Terminal", "AMEX", "Visa", "Mastercard", "BancNet", "JCB"] as $method) {
-        $cardSales += (float) ($payments[$method] ?? 0.0);
-    }
-    $breakdownSales = 0.0;
-    foreach (["bpi", "easwest", "giftcheck", "cheque"] as $field) {
-        $breakdownSales += $money($payload[$field] ?? 0);
-    }
-    $posSales = $money($payload["reconShortOver"] ?? 0)
-        + $money($payload["paidAccounts"] ?? 0)
-        + $money($payload["advancePayments"] ?? 0)
-        + $cashSales
-        + $cardSales
-        + $breakdownSales
-        + (float) ($ownersByReport[(int) $report["report_id"]] ?? 0.0);
-    $nonPosSales = $channel === "NON POS" ? (float) $report["telegram_declared_total"] : 0.0;
-    return $posSales + $nonPosSales + $money($payload["onlineTips"] ?? 0);
 };
 $ownerAccountNames = [];
 $accountNamesResult = mysqli_query($conn, "SELECT account_holder_id, account_name FROM account_holders WHERE account_type = 'owner' AND is_active = 1");
@@ -193,8 +145,7 @@ foreach ($reports as $report) {
             "telegram_declared_total" => 0,
             "pos_sales_total" => 0,
             "status" => [],
-            "payment_total" => 0,
-            "gross" => 0.0
+            "payment_total" => 0
         ];
     }
     $dailyReports[$dateKey]["report_number"][] = $report["report_number"];
@@ -203,7 +154,6 @@ foreach ($reports as $report) {
     $dailyReports[$dateKey]["telegram_declared_total"] += (float) $report["telegram_declared_total"];
     $dailyReports[$dateKey]["pos_sales_total"] += (float) $report["pos_sales_total"];
     $dailyReports[$dateKey]["payment_total"] += (float) $report["payment_total"];
-    $dailyReports[$dateKey]["gross"] += $grossForReport($report);
     $dailyReports[$dateKey]["status"][] = $report["status"];
 }
 foreach ($dailyReports as &$dailyReport) {
@@ -215,10 +165,10 @@ $reports = array_values($dailyReports);
 
 $chartDays = $dailyReports;
 ksort($chartDays);
-$dailyChart = ["labels" => [], "gross" => []];
+$dailyChart = ["labels" => [], "grand_total" => []];
 foreach ($chartDays as $dateKey => $day) {
     $dailyChart["labels"][] = date("D, M j", strtotime($dateKey));
-    $dailyChart["gross"][] = round((float) $day["gross"], 2);
+    $dailyChart["grand_total"][] = round((float) $day["telegram_declared_total"], 2);
 }
 
 $fieldTotals = [];
@@ -426,16 +376,16 @@ $isPaidNote = static function ($note): bool {
 
         <section class="bg-white border rounded-2xl shadow-sm overflow-hidden mb-6">
             <div class="p-5 border-b">
-                <h3 class="text-lg font-bold">Total Gross Sales</h3>
-                <p class="text-sm text-gray-500 mt-1">Daily total gross sale for each date.</p>
+                <h3 class="text-lg font-bold">Grand Total Sales</h3>
+                <p class="text-sm text-gray-500 mt-1">Daily grand total for each date.</p>
             </div>
             <div class="p-5">
                 <?php if (empty($dailyChart["labels"])): ?>
                     <p class="py-10 text-center text-sm text-gray-500">No daily totals to chart.</p>
                 <?php else: ?>
-                    <div id="dailyGrossChartViewport" class="w-full overflow-x-auto overscroll-x-contain pb-2">
-                        <div id="dailyGrossChartInner" class="relative h-80 min-w-full">
-                            <canvas id="dailyGrossChart"></canvas>
+                    <div id="dailyGrandTotalChartViewport" class="w-full overflow-x-auto overscroll-x-contain pb-2">
+                        <div id="dailyGrandTotalChartInner" class="relative h-80 min-w-full">
+                            <canvas id="dailyGrandTotalChart"></canvas>
                         </div>
                     </div>
                 <?php endif; ?>
@@ -714,23 +664,23 @@ function filterReportDetails(detailsId) {
         filterSalesChannel.addEventListener("change", () => summaryFilters.requestSubmit());
 
         const dailyChartData = <?= json_encode($dailyChart, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
-        const dailyGrossChart = document.getElementById("dailyGrossChart");
-        const dailyGrossChartViewport = document.getElementById("dailyGrossChartViewport");
-        const dailyGrossChartInner = document.getElementById("dailyGrossChartInner");
-        let dailyGrossChartInstance = null;
+        const dailyGrandTotalChart = document.getElementById("dailyGrandTotalChart");
+        const dailyGrandTotalChartViewport = document.getElementById("dailyGrandTotalChartViewport");
+        const dailyGrandTotalChartInner = document.getElementById("dailyGrandTotalChartInner");
+        let dailyGrandTotalChartInstance = null;
 
-        function sizeDailyGrossChart() {
-            if (!dailyGrossChartViewport || !dailyGrossChartInner || !dailyChartData.labels.length) {
+        function sizeDailyGrandTotalChart() {
+            if (!dailyGrandTotalChartViewport || !dailyGrandTotalChartInner || !dailyChartData.labels.length) {
                 return;
             }
 
-            const viewportWidth = dailyGrossChartViewport.clientWidth;
+            const viewportWidth = dailyGrandTotalChartViewport.clientWidth;
             const visiblePointCount = Math.min(7, dailyChartData.labels.length);
             const pointWidth = viewportWidth / visiblePointCount;
-            dailyGrossChartInner.style.width = `${Math.max(viewportWidth, pointWidth * dailyChartData.labels.length)}px`;
+            dailyGrandTotalChartInner.style.width = `${Math.max(viewportWidth, pointWidth * dailyChartData.labels.length)}px`;
 
-            if (dailyGrossChartInstance) {
-                dailyGrossChartInstance.resize();
+            if (dailyGrandTotalChartInstance) {
+                dailyGrandTotalChartInstance.resize();
             }
         }
 
@@ -741,15 +691,15 @@ function filterReportDetails(detailsId) {
             });
         }
 
-        if (dailyGrossChart && dailyChartData.labels.length) {
-            sizeDailyGrossChart();
-            dailyGrossChartInstance = new Chart(dailyGrossChart, {
+        if (dailyGrandTotalChart && dailyChartData.labels.length) {
+            sizeDailyGrandTotalChart();
+            dailyGrandTotalChartInstance = new Chart(dailyGrandTotalChart, {
                 type: "line",
                 data: {
                     labels: dailyChartData.labels,
                     datasets: [{
-                        label: "Total Gross",
-                        data: dailyChartData.gross,
+                        label: "Grand Total",
+                        data: dailyChartData.grand_total,
                         borderColor: "#2563eb",
                         backgroundColor: "rgba(37, 99, 235, 0.12)",
                         borderWidth: 2,
@@ -768,7 +718,7 @@ function filterReportDetails(detailsId) {
                         legend: { position: "bottom" },
                         tooltip: {
                             callbacks: {
-                                label: context => "Total Gross: " + pesoValue(context.raw)
+                                label: context => "Grand Total: " + pesoValue(context.raw)
                             }
                         }
                     },
@@ -785,9 +735,9 @@ function filterReportDetails(detailsId) {
                     }
                 }
             });
-            window.addEventListener("resize", sizeDailyGrossChart);
+            window.addEventListener("resize", sizeDailyGrandTotalChart);
             requestAnimationFrame(() => {
-                dailyGrossChartViewport.scrollLeft = dailyGrossChartViewport.scrollWidth;
+                dailyGrandTotalChartViewport.scrollLeft = dailyGrandTotalChartViewport.scrollWidth;
             });
         }
 

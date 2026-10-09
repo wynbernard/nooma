@@ -36,6 +36,8 @@ $page_description = "Compare StoreHub totals and adjustments with Nooma";
 require_once __DIR__ . "/../../backend/config/database.php";
 require_once __DIR__ . "/../../backend/reports/refresh_sales_comparison.php";
 $comparisonResults = $_SESSION["sales_comparison_results"] ?? [];
+$productImportResult = $_SESSION["sales_product_import_result"] ?? null;
+unset($_SESSION["sales_product_import_result"]);
 $comparisonError = isset($_GET["refresh_comparison"])
     ? ""
     : ($_SESSION["sales_comparison_error"] ?? "");
@@ -111,6 +113,12 @@ if (isset($_GET["refresh_comparison"])) {
                     <?= htmlspecialchars($comparisonError) ?>
                 </p>
             <?php endif; ?>
+            <?php if (is_array($productImportResult)): ?>
+                <p class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">
+                    Product import complete: <?= (int) $productImportResult["added"] ?> added to inventory with Excel items sold recorded in Purchases,
+                    <?= (int) ($productImportResult["updated"] ?? 0) ?> same-date items updated without adding duplicates.
+                </p>
+            <?php endif; ?>
         </div>
         <!-- ====================================================
              UPLOAD CARD
@@ -153,7 +161,7 @@ if (isset($_GET["refresh_comparison"])) {
                         Compare StoreHub Sales Report
                     </h2>
                     <p class="text-sm text-gray-500 mt-1">
-                        Dated rows are summed daily; undated reports use the date range in the filename.
+                        Upload a daily sales report or a Sales by Product report. Product reports add missing inventory items and compare Excel Total Sales with Nooma Grand Total less Service Charge.
                     </p>
                 </div>
             </div>
@@ -375,10 +383,30 @@ if (isset($_GET["refresh_comparison"])) {
 
 
                 <input type="hidden" id="dailyTotalsJson" name="daily_totals_json" value="">
+                <input type="hidden" id="productInventoryJson" name="product_inventory_json" value="">
 
             </form>
 
 
+        </div>
+
+        <div id="productPreviewContainer" class="hidden bg-white border border-gray-200 rounded-2xl shadow-sm p-4 mb-4" aria-live="polite">
+            <h2 class="font-bold text-gray-900">Product inventory import preview</h2>
+            <p id="productPreviewSummary" class="text-sm text-gray-500 mt-1"></p>
+            <div class="overflow-x-auto mt-3 max-h-72">
+                <table class="w-full text-sm">
+                    <thead class="sticky top-0 bg-gray-50 text-left text-gray-600">
+                        <tr>
+                            <th class="py-2 pr-4">Product</th>
+                            <th class="py-2 pr-4">Department</th>
+                            <th class="py-2 text-right">Items Sold</th>
+                            <th class="py-2 text-right">Total Sales PHP</th>
+                            <th class="py-2 text-right">Total Discount PHP</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productPreviewRows" class="divide-y divide-gray-100"></tbody>
+                </table>
+            </div>
         </div>
 
         <div id="extractedDataContainer" class="hidden bg-white border border-gray-200 rounded-xl p-4 mb-4" aria-live="polite">
@@ -397,326 +425,6 @@ if (isset($_GET["refresh_comparison"])) {
                         </tr>
                     </thead>
                     <tbody id="extractedDataRows" class="divide-y divide-gray-100"></tbody>
-                </table>
-            </div>
-        </div>
-
-
-
-        <!-- ====================================================
-             PROCESS INFORMATION
-        ===================================================== -->
-
-        <div
-            class="bg-blue-50
-                   border border-blue-200
-                   rounded-2xl p-4 mb-4"
-        >
-
-
-            <h3
-                class="font-bold text-blue-900 mb-4"
-            >
-                Daily Comparison
-            </h3>
-
-
-            <div
-                class="grid grid-cols-1
-                       md:grid-cols-3 gap-4"
-            >
-
-
-                <!-- STEP 1 -->
-
-                <div
-                    class="bg-white
-                           rounded-xl p-5
-                           border border-blue-100"
-                >
-
-                    <div class="text-2xl mb-3">
-                        1️⃣
-                    </div>
-
-
-                    <h4
-                        class="font-semibold
-                               text-gray-900"
-                    >
-                        Export from StoreHub
-                    </h4>
-
-
-                    <p
-                        class="text-sm
-                               text-gray-500 mt-2"
-                    >
-                        Export your sales-by-product report
-                        from StoreHub as an Excel
-                        or CSV file.
-                    </p>
-
-                </div>
-
-
-
-                <!-- STEP 2 -->
-
-                <div
-                    class="bg-white
-                           rounded-xl p-5
-                           border border-blue-100"
-                >
-
-                    <div class="text-2xl mb-3">
-                        2️⃣
-                    </div>
-
-
-                    <h4
-                        class="font-semibold
-                               text-gray-900"
-                    >
-                        Upload to Nooma
-                    </h4>
-
-
-                    <p
-                        class="text-sm
-                               text-gray-500 mt-2"
-                    >
-                        Select the exported StoreHub
-                        file and upload it to Nooma.
-                    </p>
-
-                </div>
-
-
-
-                <!-- STEP 3 -->
-
-                <div
-                    class="bg-white
-                           rounded-xl p-5
-                           border border-blue-100"
-                >
-
-                    <div class="text-2xl mb-3">
-                        3️⃣
-                    </div>
-
-
-                    <h4
-                        class="font-semibold
-                               text-gray-900"
-                    >
-                        Compare Daily Totals
-                    </h4>
-
-
-                    <p
-                        class="text-sm
-                               text-gray-500 mt-2"
-                    >
-                        Nooma compares each Excel field with the matching non-voided report value.
-                    </p>
-
-                </div>
-
-
-            </div>
-
-        </div>
-
-
-
-        <!-- ====================================================
-             EXPECTED REPORT DATA
-        ===================================================== -->
-
-        <div
-            class="bg-white
-                   border border-gray-200
-                   rounded-2xl
-                   shadow-sm p-4 mb-4"
-        >
-
-            <div class="flex items-center gap-3 mb-4">
-
-                <div
-                    class="w-10 h-10
-                           bg-gray-100
-                           rounded-xl
-                           flex items-center
-                           justify-center"
-                >
-
-                    <svg
-                        class="w-5 h-5 text-gray-600"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-
-                        <path
-                            stroke-linecap="round"
-                            stroke-linejoin="round"
-                            stroke-width="2"
-                            d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h8l4 4v12a2 2 0 01-2 2z"
-                        />
-
-                    </svg>
-
-                </div>
-
-
-                <div>
-
-                    <h3
-                        class="font-bold
-                               text-gray-900"
-                    >
-                        Values Used
-                    </h3>
-
-
-                    <p
-                        class="text-sm
-                               text-gray-500"
-                    >
-                        Sales are grouped by row date, or compared as one total for the filename date range.
-                    </p>
-
-                </div>
-
-            </div>
-
-
-            <div
-                class="overflow-x-auto"
-            >
-
-                <table class="w-full text-sm">
-
-                    <thead>
-
-                        <tr
-                            class="border-b
-                                   border-gray-200"
-                        >
-
-                            <th
-                                class="text-left
-                                       py-3 pr-4
-                                       font-semibold
-                                       text-gray-600"
-                            >
-                                Field
-                            </th>
-
-                            <th
-                                class="text-left
-                                       py-3
-                                       font-semibold
-                                       text-gray-600"
-                            >
-                                Description
-                            </th>
-
-                        </tr>
-
-                    </thead>
-
-
-                    <tbody
-                        class="divide-y
-                               divide-gray-100"
-                    >
-
-                        <tr>
-
-                            <td
-                                class="py-3
-                                       pr-4
-                                       font-medium"
-                            >
-                                Excel Total Sale / Nooma Grand Total
-                            </td>
-
-                            <td
-                                class="py-3
-                                       text-gray-500"
-                            >
-                                Sum of Excel Grand Total values for that date
-                            </td>
-
-                        </tr>
-
-
-                        <tr>
-
-                            <td
-                                class="py-3
-                                       pr-4
-                                       font-medium"
-                            >
-                                Total Discount
-                            </td>
-
-                            <td
-                                class="py-3
-                                       text-gray-500"
-                            >
-                                Compare Excel Total Discount with Nooma Total Sales Deduction
-                            </td>
-                        </tr>
-                        <tr>
-                            <td
-                                class="py-3
-                                       pr-4
-                                       font-medium"
-                            >
-                                Service Charge
-                            </td>
-                            <td
-                                class="py-3
-                                       text-gray-500"
-                            >
-                                Compare Excel Service Charge with Nooma Service Charge
-                            </td>
-                        </tr>
-                        <tr>
-                            <td
-                                class="py-3
-                                       pr-4
-                                       font-medium"
-                            >
-                                Match status
-                            </td>
-                            <td
-                                class="py-3
-                                       text-gray-500"
-                            >
-                                Each field is matched independently when its difference is less than one cent
-                            </td>
-                        </tr>
-                        <tr>
-                            <td
-                                class="py-3
-                                       pr-4
-                                       font-medium"
-                            >
-                                Missing date
-                            </td>
-                            <td
-                                class="py-3
-                                       text-gray-500"
-                            >
-                                Shown when Nooma has no report for the Excel date
-                            </td>
-                        </tr>
-                    </tbody>
                 </table>
             </div>
         </div>
@@ -999,11 +707,23 @@ const inventoryUploadForm =
 const dailyTotalsJson =
     document.getElementById("dailyTotalsJson");
 
+const productInventoryJson =
+    document.getElementById("productInventoryJson");
+
 const extractedDataContainer =
     document.getElementById("extractedDataContainer");
 
 const extractedDataRows =
     document.getElementById("extractedDataRows");
+
+const productPreviewContainer =
+    document.getElementById("productPreviewContainer");
+
+const productPreviewSummary =
+    document.getElementById("productPreviewSummary");
+
+const productPreviewRows =
+    document.getElementById("productPreviewRows");
 
 
 // ============================================================
@@ -1091,7 +811,9 @@ async function showSelectedFile(file) {
             "hidden"
         );
         dailyTotalsJson.value = "";
+        productInventoryJson.value = "";
         extractedDataContainer.classList.add("hidden");
+        productPreviewContainer.classList.add("hidden");
         uploadButton.disabled = true;
         return;
     }
@@ -1103,22 +825,32 @@ async function showSelectedFile(file) {
         "hidden"
     );
     dailyTotalsJson.value = "";
+    productInventoryJson.value = "";
     extractedDataRows.replaceChildren();
+    productPreviewRows.replaceChildren();
     extractedDataContainer.classList.add("hidden");
+    productPreviewContainer.classList.add("hidden");
     uploadButton.disabled = true;
     uploadButton.textContent = "Extracting...";
 
     try {
         const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-        const dailyTotals = dailySalesFromWorkbook(workbook, file.name);
+        const productReport = productInventoryFromWorkbook(workbook, file.name);
         if (inventoryFile.files[0] !== file) {
             return;
         }
 
-        dailyTotalsJson.value = JSON.stringify(dailyTotals);
-        renderExtractedData(dailyTotals);
+        if (productReport) {
+            productInventoryJson.value = JSON.stringify(productReport);
+            renderProductPreview(productReport);
+            uploadButton.textContent = "Import Products & Compare";
+        } else {
+            const dailyTotals = dailySalesFromWorkbook(workbook, file.name);
+            dailyTotalsJson.value = JSON.stringify(dailyTotals);
+            renderExtractedData(dailyTotals);
+            uploadButton.textContent = "Compare Daily Totals";
+        }
         uploadButton.disabled = false;
-        uploadButton.textContent = "Compare Daily Totals";
     } catch (error) {
         if (inventoryFile.files[0] !== file) {
             return;
@@ -1127,6 +859,37 @@ async function showSelectedFile(file) {
         uploadButton.disabled = true;
         uploadButton.textContent = "Compare Daily Totals";
     }
+}
+
+function renderProductPreview(productReport) {
+    productPreviewRows.replaceChildren();
+    const totalItemsSold = productReport.products.reduce((sum, product) => sum + product.items_sold, 0);
+    const totalSales = productReport.products.reduce((sum, product) => sum + product.total_sales, 0);
+    const totalDiscount = productReport.products.reduce((sum, product) => sum + product.total_discount, 0);
+    productPreviewSummary.textContent =
+        `${productReport.products.length} products for ${productReport.date}; ` +
+        `${totalItemsSold.toLocaleString()} items sold; Excel Total Sales PHP ` +
+        totalSales.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) +
+        `; Excel Total Discount PHP ${totalDiscount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` +
+        ". Excel items sold will be recorded in Purchases; existing products for this date will be updated instead of duplicated.";
+
+    productReport.products.forEach((product) => {
+        const row = document.createElement("tr");
+        [
+            product.name,
+            product.department,
+            product.items_sold.toLocaleString(),
+            product.total_sales.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+            product.total_discount.toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        ].forEach((value, index) => {
+            const cell = document.createElement("td");
+            cell.className = index < 2 ? "py-2 pr-4" : "py-2 text-right tabular-nums";
+            cell.textContent = value;
+            row.appendChild(cell);
+        });
+        productPreviewRows.appendChild(row);
+    });
+    productPreviewContainer.classList.remove("hidden");
 }
 
 function renderExtractedData(dailyTotals) {
@@ -1170,8 +933,11 @@ removeFile.addEventListener("click", function () {
         "hidden"
     );
     dailyTotalsJson.value = "";
+    productInventoryJson.value = "";
     extractedDataRows.replaceChildren();
+    productPreviewRows.replaceChildren();
     extractedDataContainer.classList.add("hidden");
+    productPreviewContainer.classList.add("hidden");
     uploadButton.disabled = true;
     uploadButton.textContent = "Compare Daily Totals";
 });
@@ -1316,6 +1082,74 @@ function salesColumnIndexes(headers) {
     ]));
 }
 
+function productInventoryFromWorkbook(workbook, filename) {
+    const aliases = {
+        name: ["product name", "item name", "product"],
+        department: ["product category", "category", "department"],
+        itemsSold: ["total items sold", "items sold", "quantity sold"],
+        totalSales: ["total sales php", "total sales", "sales amount"],
+        totalDiscount: ["total discount php", "total discount", "discount amount"]
+    };
+
+    for (const sheetName of workbook.SheetNames) {
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+            header: 1,
+            raw: true,
+            defval: null
+        });
+        for (let headerRow = 0; headerRow < Math.min(rows.length, 40); headerRow += 1) {
+            const headers = rows[headerRow] || [];
+            const columns = Object.fromEntries(Object.entries(aliases).map(([field, names]) => [
+                field,
+                names.map((name) => headers.findIndex((header) => normalizeHeader(header) === name))
+                    .find((column) => column !== -1) ?? -1
+            ]));
+            if (Object.values(columns).some((column) => column === -1)) {
+                continue;
+            }
+
+            const filenameDates = Array.from(
+                String(filename ?? "").matchAll(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/g),
+                (match) => parseSingleReportDate(match[0])
+            ).filter(Boolean);
+            if (filenameDates.length !== 1) {
+                throw new Error("The Sales by Product filename must include exactly one report date, such as 2026-10-08.");
+            }
+
+            const products = [];
+            for (const row of rows.slice(headerRow + 1)) {
+                const name = String(row[columns.name] ?? "").trim();
+                if (!name || /^(grand )?totals?$/i.test(name)) {
+                    continue;
+                }
+
+                const category = normalizeHeader(row[columns.department]);
+                const department = category === "kitchen"
+                    ? "Kitchen"
+                    : (category === "bar" ? "Bar" : "");
+                const itemsSold = parseSalesAmount(row[columns.itemsSold]);
+                const totalSales = parseSalesAmount(row[columns.totalSales]);
+                const totalDiscount = parseSalesAmount(row[columns.totalDiscount]);
+                if (!department || itemsSold === null || totalSales === null || totalDiscount === null) {
+                    throw new Error(`Product "${name}" has an unsupported category or invalid sales values.`);
+                }
+                products.push({
+                    name,
+                    department,
+                    items_sold: itemsSold,
+                    total_sales: totalSales,
+                    total_discount: totalDiscount
+                });
+            }
+            if (!products.length) {
+                throw new Error("The Sales by Product report has no product rows.");
+            }
+            return { date: filenameDates[0], products };
+        }
+    }
+    return null;
+}
+
 function dailySalesFromWorkbook(workbook, filename) {
     for (const sheetName of workbook.SheetNames) {
         const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
@@ -1444,8 +1278,15 @@ inventoryUploadForm.addEventListener("submit", async function (event) {
     try {
         const file = inventoryFile.files[0];
         const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-        const dailyTotals = dailySalesFromWorkbook(workbook, file.name);
-        document.getElementById("dailyTotalsJson").value = JSON.stringify(dailyTotals);
+        const productReport = productInventoryFromWorkbook(workbook, file.name);
+        if (productReport) {
+            productInventoryJson.value = JSON.stringify(productReport);
+            dailyTotalsJson.value = "";
+        } else {
+            const dailyTotals = dailySalesFromWorkbook(workbook, file.name);
+            dailyTotalsJson.value = JSON.stringify(dailyTotals);
+            productInventoryJson.value = "";
+        }
         inventoryUploadForm.submit();
     } catch (error) {
         window.showToast(error.message || "Could not read the sales report.", "error");
