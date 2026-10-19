@@ -187,7 +187,7 @@ if ($ownerNamesResult) {
                         <td class="px-6 py-4 text-center whitespace-nowrap">
                             <button 
                                 type="button"
-                                class="inline-flex items-center justify-center px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-sm hover:shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 active:scale-95"
+                                class="mark-as-paid inline-flex items-center justify-center px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-xl shadow-sm hover:shadow transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 active:scale-95"
                                 data-report-id="<?= (int) $account["report_id"] ?>"
                                 data-account-type="<?= htmlspecialchars($account["account_type"]) ?>"
                                 <?php if ($account["account_type"] === "owner"): ?>

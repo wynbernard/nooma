@@ -401,7 +401,7 @@ if (isset($_GET["refresh_comparison"])) {
                             <th class="py-2 pr-4">Department</th>
                             <th class="py-2 text-right">Items Sold</th>
                             <th class="py-2 text-right">Total Sales PHP</th>
-                            <th class="py-2 text-right">Total Discount PHP</th>
+                            <th class="py-2 text-right">Total Discount PHP</th> 
                         </tr>
                     </thead>
                     <tbody id="productPreviewRows" class="divide-y divide-gray-100"></tbody>
@@ -999,6 +999,35 @@ function normalizeHeader(value) {
         .trim();
 }
 
+function normalizeDepartment(value, fallbackName = "") {
+    const category = normalizeHeader(value);
+    const name = normalizeHeader(fallbackName);
+
+    if (category.includes("promo") || name.includes("promo")) {
+        return "Promo";
+    }
+    if (category.includes("kitchen") || name.includes("cooking fee") || name.includes("kitchen")) {
+        return "Kitchen";
+    }
+    if (
+        category.includes("bar") ||
+        name.includes("corkage") ||
+        name.includes("bottle") ||
+        name.includes("beer") ||
+        name.includes("heineken") ||
+        name.includes("vodka") ||
+        name.includes("wine") ||
+        name.includes("cocktail") ||
+        name.includes("spirits")
+    ) {
+        return "Bar";
+    }
+    if (!category || category === "n a" || category === "na" || category === "none") {
+        return "Kitchen";
+    }
+    return "";
+}
+
 function formatDateParts(year, month, day) {
     const date = new Date(Date.UTC(year, month - 1, day));
     if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {
@@ -1044,6 +1073,18 @@ function parseSingleReportDate(value) {
 
     const date = parseExcelDate(value);
     return date && Number(date.slice(0, 4)) >= 2000 ? date : null;
+}
+
+function reportDateFromFilename(filename) {
+    const dateMatches = Array.from(
+        String(filename ?? "").matchAll(/(?:^|[^\d])(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})(?=$|[^\d])/g),
+        (match) => match[1]
+    );
+    const reportDate = dateMatches.length === 1 ? parseSingleReportDate(dateMatches[0]) : null;
+    if (!reportDate) {
+        throw new Error("The Sales by Product filename must include exactly one valid report date, such as 2026-10-08.");
+    }
+    return reportDate;
 }
 
 function parseSalesAmount(value) {
@@ -1108,13 +1149,7 @@ function productInventoryFromWorkbook(workbook, filename) {
                 continue;
             }
 
-            const filenameDates = Array.from(
-                String(filename ?? "").matchAll(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/g),
-                (match) => parseSingleReportDate(match[0])
-            ).filter(Boolean);
-            if (filenameDates.length !== 1) {
-                throw new Error("The Sales by Product filename must include exactly one report date, such as 2026-10-08.");
-            }
+            const reportDate = reportDateFromFilename(filename);
 
             const products = [];
             for (const row of rows.slice(headerRow + 1)) {
@@ -1123,10 +1158,7 @@ function productInventoryFromWorkbook(workbook, filename) {
                     continue;
                 }
 
-                const category = normalizeHeader(row[columns.department]);
-                const department = category === "kitchen"
-                    ? "Kitchen"
-                    : (category === "bar" ? "Bar" : "");
+                const department = normalizeDepartment(row[columns.department], name);
                 const itemsSold = parseSalesAmount(row[columns.itemsSold]);
                 const totalSales = parseSalesAmount(row[columns.totalSales]);
                 const totalDiscount = parseSalesAmount(row[columns.totalDiscount]);
@@ -1144,7 +1176,7 @@ function productInventoryFromWorkbook(workbook, filename) {
             if (!products.length) {
                 throw new Error("The Sales by Product report has no product rows.");
             }
-            return { date: filenameDates[0], products };
+            return { date: reportDate, products };
         }
     }
     return null;

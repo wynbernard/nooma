@@ -401,36 +401,22 @@
                                                             name="owner_account[<?= $account['account_holder_id'] ?>]"
                                                             placeholder="0.00"
                                                             step="0.01"
-                                                           
                                                             inputmode="decimal"
                                                             class="owner-account w-full border rounded-xl px-4 py-3 mb-2"
                                                         >
-                                                        <input
-                                                            type="hidden"
-                                                            id="ownerImage_<?= $account['account_holder_id'] ?>"
-                                                            value=""
+                                                        <label
+                                                            for="ownerNote_<?= $account['account_holder_id'] ?>"
+                                                            class="block text-xs font-medium text-gray-600 mb-1"
                                                         >
-                                                        <div class="owner-image-field relative" data-account-id="<?= $account['account_holder_id'] ?>">
-                                                            <input
-                                                                type="file"
-                                                                id="ownerImageFile_<?= $account['account_holder_id'] ?>"
-                                                                name="owner_image_<?= $account['account_holder_id'] ?>"
-                                                                accept=".jpg,.jpeg,.png,.gif,.webp"
-                                                                class="owner-image-file hidden"
-                                                            >
-                                                            <button
-                                                                type="button"
-                                                                class="pick-owner-image flex items-center justify-between gap-2 w-full border rounded-xl px-3 py-2 text-sm bg-gray-50 hover:bg-gray-100"
-                                                            >
-                                                                <span class="owner-image-label text-gray-500 truncate">Attach image</span>
-                                                            </button>
-                                                            <div class="owner-image-preview mt-2 hidden items-center gap-2">
-                                                                <img src="" alt="Owner account attachment" class="h-16 w-16 object-cover rounded-lg border">
-                                                                <button type="button" class="clear-owner-image text-xs font-medium text-red-600 hover:text-red-700">
-                                                                    Remove
-                                                                </button>
-                                                            </div>
-                                                        </div>
+                                                            Note
+                                                        </label>
+                                                        <input
+                                                            type="text"
+                                                            id="ownerNote_<?= $account['account_holder_id'] ?>"
+                                                            name="ownerNote_<?= $account['account_holder_id'] ?>"
+                                                            placeholder="Add note..."
+                                                            class="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                                                        >
                                                     </div>
                                                 <?php endforeach; ?>
                                             <?php else: ?>
@@ -532,6 +518,18 @@
                                                     placeholder="0.00"
                                                     class="other-payment w-full border rounded-xl px-4 py-3"
                                                 >
+                                                <div class="mt-2">
+                                                    <label for="otherCashNote" class="block text-xs font-medium text-gray-600 mb-1">
+                                                        Note
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        id="otherCashNote"
+                                                        name="other_cash_note"
+                                                        placeholder="Add note..."
+                                                        class="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                                                    >
+                                                </div>
                                             </div>
 
                                             <!-- CARD (MAYA TERMINAL) -->
@@ -548,6 +546,18 @@
                                                     placeholder="0.00"
                                                     class="other-payment w-full border rounded-xl px-4 py-3"
                                                 >
+                                                <div class="mt-2">
+                                                    <label for="otherMayaTerminalNote" class="block text-xs font-medium text-gray-600 mb-1">
+                                                        Note
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        id="otherMayaTerminalNote"
+                                                        name="other_maya_terminal_note"
+                                                        placeholder="Add note..."
+                                                        class="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                                                    >
+                                                </div>
                                             </div>
 
                                             <!-- DIRECT BT BPI NOOMA -->
@@ -564,6 +574,18 @@
                                                     placeholder="0.00"
                                                     class="other-payment w-full border rounded-xl px-4 py-3"
                                                 >
+                                                <div class="mt-2">
+                                                    <label for="otherBpiNoomaNote" class="block text-xs font-medium text-gray-600 mb-1">
+                                                        Note
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        id="otherBpiNoomaNote"
+                                                        name="other_bpi_nooma_note"
+                                                        placeholder="Add note..."
+                                                        class="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                                                    >
+                                                </div>
                                             </div>
 
                                             <!-- DIRECT BT EASTWEST NOOMA -->
@@ -580,6 +602,18 @@
                                                     placeholder="0.00"
                                                     class="other-payment w-full border rounded-xl px-4 py-3"
                                                 >
+                                                <div class="mt-2">
+                                                    <label for="otherEastwestNoomaNote" class="block text-xs font-medium text-gray-600 mb-1">
+                                                        Note
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        id="otherEastwestNoomaNote"
+                                                        name="other_eastwest_nooma_note"
+                                                        placeholder="Add note..."
+                                                        class="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                                                    >
+                                                </div>
                                             </div>
 
                                             <!-- GIFT CHECK -->
@@ -596,6 +630,18 @@
                                                     placeholder="0.00"
                                                     class="other-payment w-full border rounded-xl px-4 py-3"
                                                 >
+                                                <div class="mt-2">
+                                                    <label for="otherGiftCheckNote" class="block text-xs font-medium text-gray-600 mb-1">
+                                                        Note
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        id="otherGiftCheckNote"
+                                                        name="other_gift_check_note"
+                                                        placeholder="Add note..."
+                                                        class="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                                                    >
+                                                </div>
                                             </div>
 
                                             <!-- CHEQUES -->
@@ -612,6 +658,18 @@
                                                     placeholder="0.00"
                                                     class="other-payment w-full border rounded-xl px-4 py-3"
                                                 >
+                                                <div class="mt-2">
+                                                    <label for="otherChequesNote" class="block text-xs font-medium text-gray-600 mb-1">
+                                                        Note
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        id="otherChequesNote"
+                                                        name="other_cheques_note"
+                                                        placeholder="Add note..."
+                                                        class="w-full border rounded-xl px-3 py-2 text-sm bg-white"
+                                                    >
+                                                </div>
                                             </div>
 
                                         </div>

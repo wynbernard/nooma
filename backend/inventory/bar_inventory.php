@@ -21,7 +21,7 @@ $username = $_SESSION["username"] ?? "admin";
 // Page information
 $inventoryDepartment = basename((string) ($_SERVER["PHP_SELF"] ?? "")) === "kitchenInventory.php"
     ? "Kitchen"
-    : "Bar";
+    : (basename((string) ($_SERVER["PHP_SELF"] ?? "")) === "promoInventory.php" ? "Promo" : "Bar");
 $page_title = $inventoryDepartment . " Inventory";
 $page_description = $inventoryDepartment . " stock register";
 $inventoryDateFilter = trim((string) ($_GET["inventory_date"] ?? ""));
@@ -40,8 +40,8 @@ if ($inventoryDateFilter !== "") {
 $inventoryAction = (string) ($_POST["inventory_action"] ?? "");
 $inventoryId = 0;
 $department = trim((string) ($_POST["department"] ?? $inventoryDepartment));
-if (!in_array($department, ["Kitchen", "Bar"], true)) {
-    $error_message = "Choose either Kitchen or Bar for the inventory department.";
+if (!in_array($department, ["Kitchen", "Bar", "Promo"], true)) {
+    $error_message = "Choose a valid inventory department.";
 }
 
 // ==========================================

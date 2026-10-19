@@ -20,6 +20,7 @@
                     <select name="department" required class="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="Kitchen" <?= $inventoryDepartment === "Kitchen" ? "selected" : "" ?>>Kitchen</option>
                         <option value="Bar" <?= $inventoryDepartment === "Bar" ? "selected" : "" ?>>Bar</option>
+                        <option value="Promo" <?= $inventoryDepartment === "Promo" ? "selected" : "" ?>>Promo</option>
                     </select>
                 </div>
                 <div>
@@ -111,6 +112,7 @@
                     <select name="department" id="update_department" required class="w-full px-3.5 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                         <option value="Kitchen">Kitchen</option>
                         <option value="Bar">Bar</option>
+                        <option value="Promo">Promo</option>
                     </select>
                 </div>
                 <div>

@@ -97,8 +97,31 @@ if ($productInventoryJson !== "") {
         $itemsSold = $product["items_sold"] ?? null;
         $totalSales = $product["total_sales"] ?? null;
         $totalDiscount = $product["total_discount"] ?? null;
+
+        $normalizedDepartment = strtolower($department);
+        $normalizedName = strtolower($name);
+        if (str_contains($normalizedDepartment, "promo") || str_contains($normalizedName, "promo")) {
+            $department = "Promo";
+        } elseif (str_contains($normalizedDepartment, "kitchen") || str_contains($normalizedName, "cooking fee") || str_contains($normalizedName, "kitchen")) {
+            $department = "Kitchen";
+        } elseif (
+            str_contains($normalizedDepartment, "bar")
+            || str_contains($normalizedName, "corkage")
+            || str_contains($normalizedName, "bottle")
+            || str_contains($normalizedName, "beer")
+            || str_contains($normalizedName, "heineken")
+            || str_contains($normalizedName, "vodka")
+            || str_contains($normalizedName, "wine")
+            || str_contains($normalizedName, "cocktail")
+            || str_contains($normalizedName, "spirits")
+        ) {
+            $department = "Bar";
+        } elseif ($normalizedDepartment === "" || $normalizedDepartment === "n a" || $normalizedDepartment === "na" || $normalizedDepartment === "none") {
+            $department = "Kitchen";
+        }
+
         if ($name === "" || strlen($name) > 255
-            || !in_array($department, ["Kitchen", "Bar"], true)
+            || !in_array($department, ["Kitchen", "Bar", "Promo"], true)
             || !is_numeric($itemsSold) || !is_finite((float) $itemsSold) || (float) $itemsSold < 0
             || !is_numeric($totalSales) || !is_finite((float) $totalSales)
             || !is_numeric($totalDiscount) || !is_finite((float) $totalDiscount)) {

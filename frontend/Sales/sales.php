@@ -127,6 +127,39 @@ if ($existingSaleTypesResult) {
         ];
     }
 }
+
+$nextSaleDate = date("Y-m-d");
+$nextSaleType = "Lunch";
+$latestShiftSale = null;
+foreach ($existingSaleTypes as $sale) {
+    if (!preg_match("/(?:^|\\s)(Lunch|Closing)(?:\\s|$)/i", $sale["type"], $shiftMatch)) {
+        continue;
+    }
+
+    if (
+        $latestShiftSale === null
+        || $sale["date"] > $latestShiftSale["date"]
+        || ($sale["date"] === $latestShiftSale["date"] && $sale["report_id"] > $latestShiftSale["report_id"])
+    ) {
+        $latestShiftSale = [
+            "report_id" => $sale["report_id"],
+            "date" => $sale["date"],
+            "type" => ucfirst(strtolower($shiftMatch[1]))
+        ];
+    }
+}
+
+if ($latestShiftSale !== null) {
+    $latestDate = DateTimeImmutable::createFromFormat("!Y-m-d", $latestShiftSale["date"]);
+    if ($latestDate !== false) {
+        if ($latestShiftSale["type"] === "Lunch") {
+            $nextSaleDate = $latestDate->format("Y-m-d");
+            $nextSaleType = "Closing";
+        } else {
+            $nextSaleDate = $latestDate->modify("+1 day")->format("Y-m-d");
+        }
+    }
+}
 ?>
 
 <!DOCTYPE html>
@@ -1020,7 +1053,7 @@ function calculateTotalSalesBasedOnPayment() {
 
     const posPaymentSum = parseMoney(totalPayment.value);
     const otherPaymentSum = parseMoney(totalOtherPayments ? totalOtherPayments.value : 0);
-    const paymentSum = isNonPOS() ? posPaymentSum + otherPaymentSum : posPaymentSum;
+    const paymentSum = posPaymentSum + otherPaymentSum;
     const accountAdjustments = parseMoney(ownersDiscount.value);
     const paidAccount = parseMoney(paidAccounts.value);
     const marketingExpensesSum = parseMoney(totalMarketingExpenses.value);
@@ -1062,9 +1095,11 @@ function updateShortOverBadge() {
 function calculateShortOver() {
     const declaredGrandTotal = parseMoney(grandTotal.value);
     const totalBasedOnPayments = parseMoney(totalSalesBasedOnPayment.value);
+    const otherPaymentSum = parseMoney(totalOtherPayments ? totalOtherPayments.value : 0);
     const unpaid = parseMoney(unpaidAccounts.value);
+    const adjustedTotalBasedOnPayments = totalBasedOnPayments - otherPaymentSum;
 
-    reconShortOver.value = formatMoney(declaredGrandTotal - totalBasedOnPayments - unpaid );
+    reconShortOver.value = formatMoney(declaredGrandTotal - adjustedTotalBasedOnPayments - unpaid);
     updateShortOverBadge();
 }
 
@@ -1317,6 +1352,8 @@ calculateOnlineTips();
         const saleType = document.getElementById("saleType");
         const saleDuplicateError = document.getElementById("saleDuplicateError");
         const existingSaleTypes = <?= json_encode($existingSaleTypes, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
+        const nextSaleDate = <?= json_encode($nextSaleDate) ?>;
+        const nextSaleType = <?= json_encode($nextSaleType) ?>;
 
         let editingReportId = null;
 
@@ -1370,6 +1407,8 @@ calculateOnlineTips();
         function resetSaleFormForCreate() {
             editingReportId = null;
             salesForm.reset();
+            saleDate.value = nextSaleDate;
+            saleType.value = nextSaleType;
             resetUnpaidAccountRows();
             resetOwnerImagePreviews();
             document.getElementById("saleModalTitle").textContent = "Create New Sale";
@@ -1416,6 +1455,11 @@ calculateOnlineTips();
             Object.entries(payload).forEach(([key, value]) => {
                 if (key === "ownerAccounts" && value && typeof value === "object") {
                     Object.entries(value).forEach(([accountId, amount]) => setFormValue(`owner_${accountId}`, amount));
+                    return;
+                }
+                const ownerNoteMatch = key.match(/^ownerNote_(\d+)$/);
+                if (ownerNoteMatch) {
+                    setFormValue(`ownerNote_${ownerNoteMatch[1]}`, value);
                     return;
                 }
                 const imageMatch = key.match(/^ownerImage_(\d+)$/);

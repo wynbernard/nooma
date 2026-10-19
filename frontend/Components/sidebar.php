@@ -229,7 +229,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
             $inventoryPages = [
                 'inventory.php',
                 'barInventory.php',
-                'kitchenInventory.php'
+                'kitchenInventory.php',
+                'promoInventory.php'
             ];
 
             $inventoryActive = in_array($current_page, $inventoryPages);
@@ -307,6 +308,13 @@ $current_page = basename($_SERVER['PHP_SELF']);
                        ? 'bg-blue-50 text-blue-600 font-semibold'
                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800' ?>">
                     Bar Inventory
+                </a>
+                <a href="../Inventory/promoInventory.php"
+                   class="block px-3 py-2 rounded-lg text-xs
+                   <?= $current_page === 'promoInventory.php'
+                       ? 'bg-blue-50 text-blue-600 font-semibold'
+                       : 'text-gray-500 hover:bg-gray-50 hover:text-gray-800' ?>">
+                    Promo Inventory
                 </a>
             </div>
 
