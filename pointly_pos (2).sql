@@ -1053,7 +1053,7 @@ CREATE TABLE `users` (
   `password_hash` varchar(255) NOT NULL,
   `role` enum('admin','manager','cashier','employee') NOT NULL DEFAULT 'cashier',
   `is_active` tinyint(1) NOT NULL DEFAULT 1,
-  `number_of_days` int(10) UNSIGNED NOT NULL DEFAULT 0,
+  `number_of_days` decimal(30,15) UNSIGNED NOT NULL DEFAULT 0.000000000000000,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

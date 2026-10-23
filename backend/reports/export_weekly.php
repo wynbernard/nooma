@@ -21,6 +21,9 @@ $money = static function ($value): float {
     $value = str_replace(",", "", (string) $value);
     return is_numeric($value) ? (float) $value : 0.0;
 };
+$isPaidNote = static function ($note): bool {
+    return preg_match('/(?:^|[^a-z])paid(?:$|[^a-z])/i', (string) $note) === 1;
+};
 
 $reports = [];
 $stmt = mysqli_prepare($conn, "SELECT report_id, report_number, report_date, shift_name, total_pax, telegram_declared_total, pos_sales_total, notes FROM daily_reports WHERE report_date BETWEEN ? AND ? AND status <> 'voided'");
@@ -78,7 +81,9 @@ foreach ($reports as $report) {
         $amountField = $accountIndex === "" ? "unpaidAccountAmount" : "unpaidAccountAmount_" . $accountIndex;
         $accountName = trim((string) $accountName);
         $accountAmount = $money($payload[$amountField] ?? 0);
-        if ($accountName !== "" && $accountAmount > 0) {
+        $noteField = $accountIndex === "" ? "unpaidAccountNote" : "unpaidAccountNote_" . $accountIndex;
+        $accountNote = $payload[$noteField] ?? "";
+        if ($accountName !== "" && $accountAmount > 0 && !$isPaidNote($accountNote)) {
             $unpaidNonOwnerAccounts[$accountName] = ($unpaidNonOwnerAccounts[$accountName] ?? 0) + $accountAmount;
         }
     }
@@ -87,7 +92,7 @@ foreach ($reports as $report) {
             $aid = $matches[1];
             $reportOwnerAccounts = $payload["ownerAccounts"] ?? [];
             $ownerAmount = $money($reportOwnerAccounts[$aid] ?? 0);
-            if (stripos($value, "unpaid") !== false) {
+            if (stripos($value, "unpaid") !== false && !$isPaidNote($value)) {
                 $unpaidOwnerAccountIds[$aid] = true;
                 $unpaidOwnerAmounts[$aid] = ($unpaidOwnerAmounts[$aid] ?? 0) + $ownerAmount;
             }
@@ -112,6 +117,7 @@ $nonPosShortOver = 0.0;
 $posOtherPaymentsTotal = 0.0;
 $nonPosOtherPaymentsTotal = 0.0;
 $posUnpaidNonOwnerTotal = 0.0;
+$posPaidOwnerTotal = 0.0;
 $posBreakdownTotals = [];
 $nonPosBreakdownTotals = [];
 $nonPosOwnerAccounts = [];
@@ -128,8 +134,8 @@ foreach ($reports as $report) {
     }
 
     $savedChannel = strtoupper(trim((string) ($report["payload"]["saleChannel"] ?? "")));
-    $channel = $savedChannel === "NON POS"
-        ? "NON POS"
+    $channel = in_array($savedChannel, ["POS", "NON POS"], true)
+        ? $savedChannel
         : ((float) $report["pos_sales_total"] > 0 ? "POS" : "NON POS");
     if ($channel === "NON POS") {
         $nonPosQrToJcbTotal += $qrToJcbByReport[(int) $report["report_id"]] ?? 0.0;
@@ -162,6 +168,12 @@ foreach ($reports as $report) {
         $posQrToJcbTotal += $qrToJcbByReport[(int) $report["report_id"]] ?? 0.0;
         $posCashRemittedTotal += $money($report["payload"]["cashRemitted"] ?? 0);
         $posShortOver += $money($report["payload"]["reconShortOver"] ?? 0);
+        foreach (($report["payload"]["ownerAccounts"] ?? []) as $accountId => $amount) {
+            $ownerNote = $report["payload"]["ownerNote_" . $accountId] ?? "";
+            if ($isPaidNote($ownerNote)) {
+                $posPaidOwnerTotal += $money($amount);
+            }
+        }
         $posOtherPaymentsTotal += $money($report["payload"]["paidAccounts"] ?? 0) + $money($report["payload"]["advancePayments"] ?? 0)
             + $money($report["payload"]["otherCash"] ?? 0)
             + $money($report["payload"]["otherMayaTerminal"] ?? 0)
@@ -182,9 +194,11 @@ foreach ($reports as $report) {
         foreach ($unpaidAccountNames as $nameField => $accountName) {
             $accountIndex = $nameField === "unpaidAccountName" ? "" : substr($nameField, strlen("unpaidAccountName_"));
             $amountField = $accountIndex === "" ? "unpaidAccountAmount" : "unpaidAccountAmount_" . $accountIndex;
+            $noteField = $accountIndex === "" ? "unpaidAccountNote" : "unpaidAccountNote_" . $accountIndex;
             $accountName = trim((string) $accountName);
             $accountAmount = $money($payload[$amountField] ?? 0);
-            if ($accountName !== "" && $accountAmount > 0) {
+            $accountNote = $payload[$noteField] ?? "";
+            if ($accountName !== "" && $accountAmount > 0 && !$isPaidNote($accountNote)) {
                 $posUnpaidNonOwnerTotal += $accountAmount;
             }
         }
@@ -217,7 +231,7 @@ $otherPaymentsTotal = ($payloadTotals["paidAccounts"] ?? 0)
     + ($payments["id_16"] ?? 0)
     + ($payments["id_17"] ?? 0)
     + ($payments["id_18"] ?? 0);
-$depositOtherPaymentsTotal = $otherCashTotal + $mayaTerminalSalesTotal + $otherPaymentsTotal;
+$depositOtherCashTotal = $otherCashTotal;
 $nonPos = $nonPosCashRemitted
     + $nonPosCardSalesTotal
     + $money($nonPosBreakdownTotals["bpi"] ?? 0)
@@ -237,10 +251,11 @@ $totalPos = $posCashRemittedTotal
     + $money($posBreakdownTotals["giftcheck"] ?? 0)
     + $money($posBreakdownTotals["cheque"] ?? 0)
     + $ownerAccountTotal
+    - $posPaidOwnerTotal
     + $posUnpaidNonOwnerTotal
     + $posShortOver;
 $totalGrossSales = $totalPos + $nonPos + $grabNet;
-$forDeposit = $posCashRemittedTotal + $nonPosCashRemitted + $depositOtherPaymentsTotal;
+$forDeposit = $posCashRemittedTotal + $nonPosCashRemitted + $depositOtherCashTotal;
 $unsettled = $weekendCardSales;
 
 function peso(float $amount): string {

@@ -91,7 +91,8 @@ foreach ($sales as $sale) {
     $savedChannel = is_array($savedFields)
         ? strtoupper(trim((string) ($savedFields["saleChannel"] ?? "")))
         : "";
-    $isNonPos = $savedChannel === "NON POS" || (float) $sale["pos_sales_total"] <= 0;
+    $isNonPos = $savedChannel === "NON POS"
+        || ($savedChannel !== "POS" && (float) $sale["pos_sales_total"] <= 0);
     if ($isNonPos) {
         $nonPosSales += (float) $sale["telegram_declared_total"];
         $nonPosTransactions++;
@@ -322,9 +323,10 @@ if ($latestShiftSale !== null) {
                                 $saleChannel = "pos";
                                 if (is_array($savedFields)) {
                                     $cashRemitted = (float) str_replace(",", "", (string) ($savedFields["cashRemitted"] ?? 0));
-                                    $saleChannel = strtoupper(trim((string) ($savedFields["saleChannel"] ?? ""))) === "NON POS"
+                                    $savedChannel = strtoupper(trim((string) ($savedFields["saleChannel"] ?? "")));
+                                    $saleChannel = $savedChannel === "NON POS"
                                         ? "non-pos"
-                                        : ((float) $sale["pos_sales_total"] > 0 ? "pos" : "non-pos");
+                                        : ($savedChannel === "POS" || (float) $sale["pos_sales_total"] > 0 ? "pos" : "non-pos");
                                     foreach ($savedFields as $fieldName => $fieldValue) {
                                         if ($fieldName !== "ownerAccounts" && !is_array($fieldValue) && !preg_match('/^owner(Note|Image)_/', $fieldName)) {
                                             $saleFields[$fieldName] = $fieldValue;

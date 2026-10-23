@@ -16,6 +16,12 @@ require_once __DIR__ . "/../../backend/config/database.php";
 $tipMessage = (string) ($_SESSION["tip_message"] ?? "");
 $tipMessageType = ($_SESSION["tip_message_type"] ?? "success") === "error" ? "error" : "success";
 unset($_SESSION["tip_message"], $_SESSION["tip_message_type"]);
+$formatDutyDays = static function (string $days): string {
+    if (str_contains($days, ".")) {
+        $days = rtrim(rtrim($days, "0"), ".");
+    }
+    return $days === "" ? "0" : $days;
+};
 
 if (empty($_SESSION["tip_csrf_token"])) {
     $_SESSION["tip_csrf_token"] = bin2hex(random_bytes(32));
@@ -78,13 +84,15 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "reset
 
 if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "update_employee_days") {
     $userId = (int) ($_POST["user_id"] ?? 0);
-    $numberOfDays = filter_var($_POST["number_of_days"] ?? null, FILTER_VALIDATE_INT);
+    $numberOfDays = $_POST["number_of_days"] ?? null;
+    $numberOfDays = is_scalar($numberOfDays) ? trim((string) $numberOfDays) : "";
+    $validNumberOfDays = preg_match('/^(?:\d{1,15}(?:\.\d{1,15})?|\.\d{1,15})$/D', $numberOfDays) === 1;
     $csrfToken = (string) ($_POST["csrf_token"] ?? "");
 
     if (!hash_equals($_SESSION["tip_csrf_token"], $csrfToken)) {
         $tipMessage = "The request expired. Please try again.";
         $tipMessageType = "error";
-    } elseif ($userId <= 0 || $numberOfDays === false || $numberOfDays < 0) {
+    } elseif ($userId <= 0 || !$validNumberOfDays) {
         $tipMessage = "Enter a valid non-negative number of days.";
         $tipMessageType = "error";
     } else {
@@ -94,7 +102,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "updat
             $tipMessage = "Could not update the employee's number of days.";
             $tipMessageType = "error";
         } else {
-            mysqli_stmt_bind_param($updateDaysStmt, "ii", $numberOfDays, $userId);
+            mysqli_stmt_bind_param($updateDaysStmt, "si", $numberOfDays, $userId);
             if (mysqli_stmt_execute($updateDaysStmt)) {
                 $tipMessage = "Employee number of days updated.";
             } else {
@@ -117,7 +125,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST" && ($_POST["action"] ?? "") === "updat
         echo json_encode([
             "success" => $tipMessageType !== "error",
             "message" => $tipMessage,
-            "number_of_days" => $numberOfDays === false ? null : $numberOfDays,
+            "number_of_days" => $validNumberOfDays ? $numberOfDays : null,
         ]);
         exit;
     }
@@ -177,9 +185,7 @@ $loadTipTotals = static function (mysqli $conn, string $startDate, string $endDa
     ];
     while ($row = mysqli_fetch_assoc($result)) {
         $serviceCharge = (float)$row["service_charge"];
-        $saleTipAmount = round($serviceCharge * 0.50, 2);
         $totals["service_charge"] += $serviceCharge;
-        $totals["tip_amount"] += $saleTipAmount;
         $totals["transactions"]++;
 
         $monthKey = date("Y-m", strtotime($row["report_date"]));
@@ -193,11 +199,15 @@ $loadTipTotals = static function (mysqli $conn, string $startDate, string $endDa
         }
         $totals["monthly"][$monthKey]["transactions"]++;
         $totals["monthly"][$monthKey]["service_charge"] += $serviceCharge;
-        $totals["monthly"][$monthKey]["tip_amount"] += $saleTipAmount;
     }
     mysqli_stmt_close($statement);
 
+    $totals["tip_amount"] = round($totals["service_charge"] * 0.50, 2);
     ksort($totals["monthly"]);
+    foreach ($totals["monthly"] as &$month) {
+        $month["tip_amount"] = round($month["service_charge"] * 0.50, 2);
+    }
+    unset($month);
     $totals["monthly"] = array_values($totals["monthly"]);
     return $totals;
 };
@@ -237,17 +247,18 @@ if ($employeeResult) {$employees = [];
             "user_id" => (int) $employee["user_id"],
             "full_name" => (string) $employee["full_name"],
             "role" => ucfirst((string) $employee["role"]),
-            "number_of_days" => (int) $employee["number_of_days"],
+            "number_of_days" => (string) $employee["number_of_days"],
         ];
     }
-    $totalDutyDays = array_sum(array_column($employees, "number_of_days"));
+    $totalDutyDays = array_sum(array_map("floatval", array_column($employees, "number_of_days")));
 
     foreach ($employees as $employee) {
+        $employeeDays = (float) $employee["number_of_days"];
         $sharePercent = $totalDutyDays > 0
-            ? ($employee["number_of_days"] / $totalDutyDays) * 100
+            ? ($employeeDays / $totalDutyDays) * 100
             : 0.0;
         $employeeTipAmount = $totalDutyDays > 0
-            ? round(($tipAmount / $totalDutyDays) * $employee["number_of_days"], 2)
+            ? round(($tipAmount / $totalDutyDays) * $employeeDays, 2)
             : 0.0;
         $employeeTipBreakdown[] = [
             "user_id" => $employee["user_id"],
@@ -364,7 +375,7 @@ if ($employeeResult) {$employees = [];
                             type="number"
                             id="additional_tip_amount"
                             name="additional_tip_amount"
-                            step="0.01"
+                            step="any"
                             min="0"
                             value="<?= htmlspecialchars((string) $additionalTipAmount) ?>"
                             placeholder="Enter amount"
@@ -440,9 +451,11 @@ if ($employeeResult) {$employees = [];
                                                     type="number"
                                                     name="number_of_days"
                                                     data-employee-days
+                                                    min="0"
+                                                    step="any"
                                                     placeholder="Enter Days"
                                                     required
-                                                    value="<?= (int) $employee["number_of_days"] > 0 ? (int) $employee["number_of_days"] : '' ?>"
+                                                    value="<?= (float) $employee["number_of_days"] > 0 ? htmlspecialchars($formatDutyDays((string) $employee["number_of_days"])) : '' ?>"
                                                     aria-label="Number of days for <?= htmlspecialchars($employee["full_name"]) ?>"
                                                     class="w-24 border border-gray-200 rounded-lg px-2.5 py-2 text-right"
                                                 >

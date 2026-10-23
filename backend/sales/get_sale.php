@@ -42,7 +42,7 @@ if (!empty($report["notes"])) {
 $payload["saleDate"] = $report["report_date"];
 $savedChannel = strtoupper(trim((string) ($payload["saleChannel"] ?? "")));
 $shiftName = (string) ($report["shift_name"] ?? "");
-if ($savedChannel === "NON POS" || stripos($shiftName, "Non POS") === 0) {
+if ($savedChannel === "NON POS" || ($savedChannel !== "POS" && stripos($shiftName, "Non POS") === 0)) {
     $payload["saleChannel"] = "Non POS";
     $savedType = trim((string) ($payload["saleType"] ?? ""));
     if (!in_array($savedType, ["Lunch", "Closing"], true)) {
@@ -55,7 +55,9 @@ if ($savedChannel === "NON POS" || stripos($shiftName, "Non POS") === 0) {
     $payload["saleType"] = $savedType;
 } else {
     $payload["saleType"] = $shiftName;
-    $payload["saleChannel"] = ((float) $report["pos_sales_total"] > 0) ? "POS" : "Non POS";
+    $payload["saleChannel"] = $savedChannel === "POS"
+        ? "POS"
+        : (((float) $report["pos_sales_total"] > 0) ? "POS" : "Non POS");
 }
 $payload["tableNumber"] = (string) $report["total_tables"];
 $payload["pax"] = (string) $report["total_pax"];

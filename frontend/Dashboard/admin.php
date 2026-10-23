@@ -85,8 +85,8 @@ if ($dashboardReportIds) {
 foreach ($dashboardReports as &$report) {
     $payload = $report["payload"];
     $savedChannel = strtoupper(trim((string) ($payload["saleChannel"] ?? "")));
-    $channel = $savedChannel === "NON POS"
-        ? "NON POS"
+    $channel = in_array($savedChannel, ["POS", "NON POS"], true)
+        ? $savedChannel
         : ((float) $report["pos_sales_total"] > 0 ? "POS" : "NON POS");
     $payments = $dashboardPayments[(int) $report["report_id"]] ?? [];
     $cashSales = (float) ($payments["Cash"] ?? ($payments["Cash Sales"] ?? 0.0));
@@ -724,4 +724,3 @@ renderSalesChart(salesGraphRange.value);
 </script>
 
 <?php include "../Components/footer.php"; ?>
-

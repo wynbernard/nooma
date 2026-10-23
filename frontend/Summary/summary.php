@@ -25,6 +25,9 @@ $money = static function ($value): float {
     $value = str_replace(",", "", (string) $value);
     return is_numeric($value) ? (float) $value : 0.0;
 };
+$isPaidNote = static function ($note): bool {
+    return preg_match('/(?:^|[^a-z])paid(?:$|[^a-z])/i', (string) $note) === 1;
+};
 $sum = static function (array $rows, string $key) use ($money): float {
     return array_reduce($rows, static fn (float $total, array $row): float => $total + $money($row[$key] ?? 0), 0.0);
 };
@@ -86,7 +89,7 @@ foreach ($reports as $report) {
         $accountAmount = $money($payload[$amountField] ?? 0);
         $accountNote = $payload[$noteField] ?? "";
         
-        if ($accountName !== "" && $accountAmount > 0) {
+        if ($accountName !== "" && $accountAmount > 0 && !$isPaidNote($accountNote)) {
             $unpaidNonOwnerAccounts[$accountName] = ($unpaidNonOwnerAccounts[$accountName] ?? 0) + $accountAmount;
             // Store note separately
             if ($accountNote) {
@@ -99,7 +102,7 @@ foreach ($reports as $report) {
             $aid = $matches[1];
             $reportOwnerAccounts = $payload["ownerAccounts"] ?? [];
             $ownerAmount = $money($reportOwnerAccounts[$aid] ?? 0);
-            if (stripos($value, "unpaid") !== false) {
+            if (stripos($value, "unpaid") !== false && !$isPaidNote($value)) {
                 $unpaidOwnerAccountIds[$aid] = true;
                 $unpaidOwnerAmounts[$aid] = ($unpaidOwnerAmounts[$aid] ?? 0) + $ownerAmount;
             }
@@ -129,6 +132,7 @@ $nonPosShortOver = 0.0;
 $posOtherPaymentsTotal = 0.0;
 $nonPosOtherPaymentsTotal = 0.0;
 $posUnpaidNonOwnerTotal = 0.0;
+$posPaidOwnerTotal = 0.0;
 $nonPosCardSalesTotal = 0.0;
 $posCardSalesTotal = 0.0;
 $nonPosBreakdownTotals = [];
@@ -146,8 +150,8 @@ foreach ($reports as $report) {
     }
 
     $savedChannel = strtoupper(trim((string) ($report["payload"]["saleChannel"] ?? "")));
-    $channel = $savedChannel === "NON POS"
-        ? "NON POS"
+    $channel = in_array($savedChannel, ["POS", "NON POS"], true)
+        ? $savedChannel
         : ((float) $report["pos_sales_total"] > 0 ? "POS" : "NON POS");
     if ($channel === "NON POS") {
         $nonPos += $money($report["telegram_declared_total"]);
@@ -178,6 +182,12 @@ foreach ($reports as $report) {
     } else {
         $posCashRemittedTotal += $money($report["payload"]["cashRemitted"] ?? 0);
         $posShortOver += $money($report["payload"]["reconShortOver"] ?? 0);
+        foreach (($report["payload"]["ownerAccounts"] ?? []) as $accountId => $amount) {
+            $ownerNote = $report["payload"]["ownerNote_" . $accountId] ?? "";
+            if ($isPaidNote($ownerNote)) {
+                $posPaidOwnerTotal += $money($amount);
+            }
+        }
         $posOtherPaymentsTotal += $money($report["payload"]["paidAccounts"] ?? 0) + $money($report["payload"]["advancePayments"] ?? 0)
             + $money($report["payload"]["otherCash"] ?? 0)
             + $money($report["payload"]["otherMayaTerminal"] ?? 0)
@@ -198,9 +208,11 @@ foreach ($reports as $report) {
         foreach ($unpaidAccountNames as $nameField => $accountName) {
             $accountIndex = $nameField === "unpaidAccountName" ? "" : substr($nameField, strlen("unpaidAccountName_"));
             $amountField = $accountIndex === "" ? "unpaidAccountAmount" : "unpaidAccountAmount_" . $accountIndex;
+            $noteField = $accountIndex === "" ? "unpaidAccountNote" : "unpaidAccountNote_" . $accountIndex;
             $accountName = trim((string) $accountName);
             $accountAmount = $money($payload[$amountField] ?? 0);
-            if ($accountName !== "" && $accountAmount > 0) {
+            $accountNote = $payload[$noteField] ?? "";
+            if ($accountName !== "" && $accountAmount > 0 && !$isPaidNote($accountNote)) {
                 $posUnpaidNonOwnerTotal += $accountAmount;
             }
         }
@@ -246,7 +258,7 @@ $otherPaymentsTotal = $money($payloadTotals["paidAccounts"] ?? 0)
     + ($payments["id_16"] ?? 0)  // Direct BT EastWest Nooma (Other)
     + ($payments["id_17"] ?? 0)  // Gift Check (Other)
     + ($payments["id_18"] ?? 0); // Cheques (Other)
-$depositOtherPaymentsTotal = $otherCashTotal + $mayaTerminalSalesTotal + $otherPaymentsTotal;
+$depositOtherCashTotal = $otherCashTotal;
 $posBreakdownTotal = $cashSalesTotal
     + $cardSalesTotal
     + $money($payloadTotals["bpi"] ?? 0)
@@ -275,7 +287,7 @@ function reportLabel(string $field): string {
     return ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $field));
 }
 
-$totalPos = $posCashRemittedTotal + $posCardSalesTotal + $money($posBreakdownTotals["bpi"] ?? 0) + $money($posBreakdownTotals["easwest"] ?? 0) + $money($posBreakdownTotals["giftcheck"] ?? 0) + $money($posBreakdownTotals["cheque"] ?? 0) + $ownerAccountTotal + $posUnpaidNonOwnerTotal + $posShortOver;
+$totalPos = $posCashRemittedTotal + $posCardSalesTotal + $money($posBreakdownTotals["bpi"] ?? 0) + $money($posBreakdownTotals["easwest"] ?? 0) + $money($posBreakdownTotals["giftcheck"] ?? 0) + $money($posBreakdownTotals["cheque"] ?? 0) + $ownerAccountTotal - $posPaidOwnerTotal + $posUnpaidNonOwnerTotal + $posShortOver;
 $totalGrossSales = $totalPos + $nonPos + $grabNet;
 ?>
 <!DOCTYPE html>
@@ -474,21 +486,17 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                                 <?php
                                 $accountId = $ownerAccountIds[$label] ?? null;
                                 $isUnpaid = $accountId && !empty($unpaidOwnerAccountIds[$accountId]);
+                                if (!$isUnpaid) {
+                                    continue;
+                                }
                                 $unpaidAmount = $unpaidOwnerAmounts[$accountId] ?? 0;
-                                $displayAmount = $isUnpaid ? $unpaidAmount : $amount;
-                                $nonPosOwnerAmount = $isUnpaid
-                                    ? ($nonPosUnpaidOwnerAmounts[$accountId] ?? 0)
-                                    : ($nonPosOwnerAccounts[$accountId] ?? 0);
-                                $posOwnerAmount = $displayAmount - $nonPosOwnerAmount;
-                                $statusLabel = $isUnpaid ? "UNPAID" : "PAID";
-                                $statusClasses = $isUnpaid
-                                    ? "bg-red-100 text-red-800 border-red-200"
-                                    : "bg-emerald-100 text-emerald-800 border-emerald-200";
+                                $nonPosOwnerAmount = $nonPosUnpaidOwnerAmounts[$accountId] ?? 0;
+                                $posOwnerAmount = $unpaidAmount - $nonPosOwnerAmount;
                                 ?>
-                                <tr class="border-b border-gray-200 <?= $isUnpaid ? "bg-red-50" : "bg-emerald-50" ?>">
+                                <tr class="border-b border-gray-200 bg-red-50">
                                     <td colspan="2" class="px-4 py-1 pl-8 border-r border-gray-200">
                                         <?= htmlspecialchars(strtoupper($label)) ?>
-                                        <span class="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold <?= $statusClasses ?>"></span>
+                                        <span class="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border-red-200">UNPAID</span>
                                     </td>
                                     <td class="px-4 py-1 text-right border-r border-gray-200"><?= peso($posOwnerAmount) ?></td>
                                     <td class="px-4 py-1 text-right border-r border-gray-200"><?= peso($nonPosOwnerAmount) ?></td>
@@ -561,7 +569,7 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
             <section class="bg-white border-2 border-gray-800 p-4 shadow-sm h-fit space-y-4">
                 <div class="flex justify-between items-center border-b pb-2">
                     <span class="text-xs font-bold text-gray-700">FOR DEPOSIT:</span>
-                    <span class="text-sm font-bold text-emerald-700"><?= peso($posCashRemittedTotal + $nonPosCashRemitted + $depositOtherPaymentsTotal) ?></span>
+                    <span class="text-sm font-bold text-emerald-700"><?= peso($posCashRemittedTotal + $nonPosCashRemitted + $depositOtherCashTotal) ?></span>
                 </div>
                 <div class="flex justify-between items-center border-b pb-2">
                     <span class="text-xs font-bold text-gray-700">UNSETTLED:</span>

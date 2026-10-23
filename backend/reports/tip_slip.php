@@ -50,11 +50,7 @@ $employeeResult = mysqli_query($conn, "
 ");
 
 $employees = [];
-$totalDays = 0;
 while ($emp = mysqli_fetch_assoc($employeeResult)) {
-    $days = (int) $emp["number_of_days"];
-    $totalDays += $days;
-    
     // Parse last name and first name for sorting and display
     $nameParts = explode(" ", trim($emp["full_name"]));
     $lastName = array_pop($nameParts);
@@ -66,13 +62,24 @@ while ($emp = mysqli_fetch_assoc($employeeResult)) {
     $employees[] = $emp;
 }
 
+$totalDaysResult = mysqli_query($conn, "
+    SELECT COALESCE(SUM(number_of_days), 0) AS total_days
+    FROM users
+    WHERE is_active = 1 AND role = 'employee'
+");
+if (!$totalDaysResult) {
+    throw new RuntimeException("Could not load total employee duty days: " . mysqli_error($conn));
+}
+$totalDaysExact = (string) mysqli_fetch_assoc($totalDaysResult)["total_days"];
+$totalDays = (float) $totalDaysExact;
+
 // Sort employees alphabetically by Last Name
 usort($employees, function($a, $b) {
     return strcasecmp($a["last_name"], $b["last_name"]);
 });
 
 foreach ($employees as &$emp) {
-    $days = (int) $emp["number_of_days"];
+    $days = (float) $emp["number_of_days"];
     $sharePercent = $totalDays > 0 ? ($days / $totalDays) * 100 : 0;
     $tipAmount = $totalDays > 0 ? round($totalTipPool * ($days / $totalDays), 2) : 0.0;
     
@@ -81,6 +88,12 @@ foreach ($employees as &$emp) {
     $emp["rate"] = $days > 0 ? ($tipAmount / $days) : 0.0;
 }
 unset($emp);
+$formatDutyDays = static function (string $days): string {
+    if (str_contains($days, ".")) {
+        $days = rtrim(rtrim($days, "0"), ".");
+    }
+    return $days === "" ? "0" : $days;
+};
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -235,6 +248,11 @@ unset($emp);
             margin-top: 6px;
         }
 
+        @page {
+            size: A4 landscape;
+            margin: 8mm;
+        }
+
         @media print {
             body { padding: 0; }
             .no-print { display: none; }
@@ -252,10 +270,6 @@ unset($emp);
                 background-color: #96b3ec !important;
                 -webkit-print-color-adjust: exact;
                 print-color-adjust: exact;
-            }
-            @page {
-                size: landscape;
-                margin: 8mm;
             }
         }
     </style>
@@ -327,18 +341,17 @@ unset($emp);
         </thead>
         <tbody>
             <?php
-            $grandTotalDays = 0;
-            $grandTotalPay = 0.0;
+            $grandTotalDays = $totalDaysExact;
+            $grandTotalNetPayCents = 0;
             foreach ($employees as $emp): 
-                $grandTotalDays += (int)$emp["number_of_days"];
-                $grandTotalPay += (float)$emp["tip_amount"];
+                $grandTotalNetPayCents += (int) round((float) $emp["tip_amount"] * 100);
             ?>
                 <tr>
                     <td class="text-left"><?= strtoupper($emp["last_name"]) ?></td>
                     <td class="text-left"><?= strtoupper($emp["first_name"]) ?></td>
-                    <td><?= (int)$emp["number_of_days"] ?></td>
+                    <td><?= htmlspecialchars($formatDutyDays((string) $emp["number_of_days"])) ?></td>
                     <td class="text-right"><?= number_format($emp["tip_amount"], 2) ?></td>
-                    <td><?= (int)$emp["number_of_days"] ?></td>
+                    <td><?= htmlspecialchars($formatDutyDays((string) $emp["number_of_days"])) ?></td>
                     <td></td>
                     <td></td>
                     <td class="text-right"><?= number_format($emp["tip_amount"], 2) ?></td>
@@ -352,16 +365,16 @@ unset($emp);
         <tfoot>
             <tr style="background-color: #f9f9f9; font-weight: bold;">
                 <td colspan="2" class="text-left">TOTAL DAYS OF DUTY</td>
-                <td><?= $grandTotalDays ?></td>
+                <td><?= htmlspecialchars($formatDutyDays($grandTotalDays)) ?></td>
                 <td></td>
-                <td><?= $grandTotalDays ?></td>
-                <td></td>
-                <td></td>
+                <td><?= htmlspecialchars($formatDutyDays($grandTotalDays)) ?></td>
                 <td></td>
                 <td></td>
                 <td></td>
-                <td class="text-right"><?= number_format($grandTotalPay, 2) ?></td>
-                <td class="text-right"><?= number_format($grandTotalPay, 2) ?></td>
+                <td></td>
+                <td></td>
+                <td class="text-right"><?= number_format($grandTotalNetPayCents / 100, 2) ?></td>
+                <td class="text-right"><?= number_format($grandTotalNetPayCents / 100, 2) ?></td>
             </tr>
         </tfoot>
     </table>
@@ -395,7 +408,7 @@ unset($emp);
                     </div>
                     <div class="name-col" style="flex: 0.6; text-align: right;">
                         <label>DAYS</label>
-                        <span><?= (int)$emp["number_of_days"] ?></span>
+                        <span><?= htmlspecialchars($formatDutyDays((string) $emp["number_of_days"])) ?></span>
                     </div>
                 </div>
 

@@ -35,6 +35,27 @@ $selectedMonthNumber = (int) substr($selectedMonth, 5, 2);
 
 $yearStart = $selectedMonth . "-01";
 $yearEnd = date("Y-m-t", strtotime($selectedMonth . "-01"));
+$totalDays = (int) date("t", strtotime($yearStart));
+
+$dayFrom = isset($_GET["day_from"]) && $_GET["day_from"] !== "" ? (int) $_GET["day_from"] : null;
+$dayTo = isset($_GET["day_to"]) && $_GET["day_to"] !== "" ? (int) $_GET["day_to"] : null;
+$singleDay = trim((string) ($_GET["day"] ?? ""));
+
+if ($dayFrom !== null || $dayTo !== null) {
+    $dayFrom = max(1, min($dayFrom ?? 1, $totalDays));
+    $dayTo = max(1, min($dayTo ?? $totalDays, $totalDays));
+    if ($dayFrom > $dayTo) {
+        $dayTo = $dayFrom;
+    }
+    $yearStart = sprintf("%s-%02d", $selectedMonth, $dayFrom);
+    $yearEnd = sprintf("%s-%02d", $selectedMonth, $dayTo);
+} elseif ($singleDay !== "") {
+    $dayInt = (int) $singleDay;
+    if ($dayInt >= 1 && $dayInt <= $totalDays) {
+        $yearStart = sprintf("%s-%02d", $selectedMonth, $dayInt);
+        $yearEnd = $yearStart;
+    }
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -569,10 +590,15 @@ header(
     "Content-Type: application/vnd.ms-excel; charset=utf-8"
 );
 
+$exportFilename = "monthly_report_" . $selectedMonth . ".xls";
+if ($dayFrom !== null && $dayTo !== null && ($dayFrom !== 1 || $dayTo !== $totalDays)) {
+    $exportFilename = "report_" . $selectedMonth . "_day" . $dayFrom . "_to_" . $dayTo . ".xls";
+} elseif ($singleDay !== "") {
+    $exportFilename = "daily_report_" . $selectedMonth . "-" . $singleDay . ".xls";
+}
+
 header(
-    "Content-Disposition: attachment; filename=monthly_report_"
-    . $selectedMonth
-    . ".xls"
+    "Content-Disposition: attachment; filename=" . $exportFilename
 );
 
 ?>
