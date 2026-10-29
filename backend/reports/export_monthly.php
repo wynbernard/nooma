@@ -19,13 +19,30 @@ require_once __DIR__ . "/../config/database.php";
 */
 
 $selectedMonth = trim((string) ($_GET["month"] ?? date("Y-m")));
+$validMonth = static function (string $month): bool {
+    $date = DateTimeImmutable::createFromFormat("!Y-m", $month);
 
-if (!preg_match("/^\d{4}-\d{2}$/", $selectedMonth)) {
+    return $date !== false && $date->format("Y-m") === $month;
+};
+
+if (!$validMonth($selectedMonth)) {
     $selectedMonth = date("Y-m");
 }
 
-$year = (int) substr($selectedMonth, 0, 4);
-$selectedMonthNumber = (int) substr($selectedMonth, 5, 2);
+$rangeMode = array_key_exists("start_month", $_GET) || array_key_exists("end_month", $_GET);
+$startMonth = $selectedMonth;
+$endMonth = $selectedMonth;
+if ($rangeMode) {
+    $startMonth = trim((string) ($_GET["start_month"] ?? ""));
+    $endMonth = trim((string) ($_GET["end_month"] ?? ""));
+
+    if (!$validMonth($startMonth) || !$validMonth($endMonth) || $startMonth > $endMonth) {
+        http_response_code(400);
+        exit("Select a valid start and end month.");
+    }
+
+    $selectedMonth = $startMonth;
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -33,15 +50,15 @@ $selectedMonthNumber = (int) substr($selectedMonth, 5, 2);
 |--------------------------------------------------------------------------
 */
 
-$yearStart = $selectedMonth . "-01";
-$yearEnd = date("Y-m-t", strtotime($selectedMonth . "-01"));
+$yearStart = $startMonth . "-01";
+$yearEnd = date("Y-m-t", strtotime($endMonth . "-01"));
 $totalDays = (int) date("t", strtotime($yearStart));
 
 $dayFrom = isset($_GET["day_from"]) && $_GET["day_from"] !== "" ? (int) $_GET["day_from"] : null;
 $dayTo = isset($_GET["day_to"]) && $_GET["day_to"] !== "" ? (int) $_GET["day_to"] : null;
 $singleDay = trim((string) ($_GET["day"] ?? ""));
 
-if ($dayFrom !== null || $dayTo !== null) {
+if (!$rangeMode && ($dayFrom !== null || $dayTo !== null)) {
     $dayFrom = max(1, min($dayFrom ?? 1, $totalDays));
     $dayTo = max(1, min($dayTo ?? $totalDays, $totalDays));
     if ($dayFrom > $dayTo) {
@@ -49,7 +66,7 @@ if ($dayFrom !== null || $dayTo !== null) {
     }
     $yearStart = sprintf("%s-%02d", $selectedMonth, $dayFrom);
     $yearEnd = sprintf("%s-%02d", $selectedMonth, $dayTo);
-} elseif ($singleDay !== "") {
+} elseif (!$rangeMode && $singleDay !== "") {
     $dayInt = (int) $singleDay;
     if ($dayInt >= 1 && $dayInt <= $totalDays) {
         $yearStart = sprintf("%s-%02d", $selectedMonth, $dayInt);
@@ -137,7 +154,13 @@ mysqli_stmt_close($stmt);
 |--------------------------------------------------------------------------
 */
 
-$months = [$selectedMonthNumber];
+$months = [];
+$monthCursor = new DateTimeImmutable($startMonth . "-01");
+$lastMonth = new DateTimeImmutable($endMonth . "-01");
+while ($monthCursor <= $lastMonth) {
+    $months[] = $monthCursor->format("Y-m");
+    $monthCursor = $monthCursor->modify("+1 month");
+}
 
 $blank = array_fill_keys($months, 0.0);
 
@@ -223,10 +246,7 @@ foreach ($reports as $report) {
 
     $payload = $report["payload"];
 
-    $month = (int) date(
-        "n",
-        strtotime($report["report_date"])
-    );
+    $month = date("Y-m", strtotime($report["report_date"]));
 
     /*
     |--------------------------------------------------------------------------
@@ -579,21 +599,16 @@ function monthRow(
 |--------------------------------------------------------------------------
 */
 
-$monthName = strtoupper(
-    date(
-        "F",
-        strtotime($selectedMonth . "-01")
-    )
-);
-
 header(
     "Content-Type: application/vnd.ms-excel; charset=utf-8"
 );
 
 $exportFilename = "monthly_report_" . $selectedMonth . ".xls";
-if ($dayFrom !== null && $dayTo !== null && ($dayFrom !== 1 || $dayTo !== $totalDays)) {
+if ($rangeMode && $startMonth !== $endMonth) {
+    $exportFilename = "monthly_report_" . $startMonth . "_to_" . $endMonth . ".xls";
+} elseif (!$rangeMode && $dayFrom !== null && $dayTo !== null && ($dayFrom !== 1 || $dayTo !== $totalDays)) {
     $exportFilename = "report_" . $selectedMonth . "_day" . $dayFrom . "_to_" . $dayTo . ".xls";
-} elseif ($singleDay !== "") {
+} elseif (!$rangeMode && $singleDay !== "") {
     $exportFilename = "daily_report_" . $selectedMonth . "-" . $singleDay . ".xls";
 }
 
@@ -668,7 +683,9 @@ th {
     <tr class="header" style="width: 100px;">
 
         <th>
-            <?= $year ?>
+            <?= htmlspecialchars(substr($startMonth, 0, 4) === substr($endMonth, 0, 4)
+                ? substr($startMonth, 0, 4)
+                : substr($startMonth, 0, 4) . "-" . substr($endMonth, 0, 4)) ?>
         </th>
 
         <th>
@@ -678,20 +695,10 @@ th {
         <?php foreach ($months as $month): ?>
 
             <th>
-                <?= sprintf("[%02d]", $month) ?>
-                <?= strtoupper(
-                    date(
-                        "M",
-                        mktime(
-                            0,
-                            0,
-                            0,
-                            $month,
-                            1,
-                            $year
-                        )
-                    )
-                ) ?>
+                <?= "[" . substr($month, 5, 2) . "] " . strtoupper(date("M", strtotime($month . "-01"))) ?>
+                <?php if (substr($startMonth, 0, 4) !== substr($endMonth, 0, 4)): ?>
+                    <?= substr($month, 0, 4) ?>
+                <?php endif; ?>
             </th>
 
         <?php endforeach; ?>

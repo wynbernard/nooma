@@ -130,19 +130,29 @@ function peso(float $amount): string {
                 <h2 class="text-2xl font-bold">Monthly Summary</h2>
                 <p class="text-sm text-gray-500 mt-1">One monthly total with all saved field details.</p>
             </div>
-            <div class="flex items-end gap-2">
+            <div class="flex flex-wrap items-end gap-2">
                 <form method="get" class="flex items-end gap-2">
-                <div>
-                    <label for="summaryMonth" class="block text-xs font-medium text-gray-500 mb-1">Month</label>
-                    <input type="month" id="summaryMonth" name="month" value="<?= htmlspecialchars($selectedMonth) ?>"
-                           class="border rounded-xl px-3 py-2 bg-white" onchange="this.form.submit()">
-                </div>
+                    <div>
+                        <label for="summaryMonth" class="block text-xs font-medium text-gray-500 mb-1">Month</label>
+                        <input type="month" id="summaryMonth" name="month" value="<?= htmlspecialchars($selectedMonth) ?>"
+                               class="border rounded-xl px-3 py-2 bg-white" onchange="this.form.submit()">
+                    </div>
                 </form>
-                <a href="../../backend/reports/export_monthly.php?month=<?= urlencode($selectedMonth) ?>"
-                   download="monthly_report_<?= htmlspecialchars(substr($selectedMonth, 0, 4)) ?>.xls"
-                   class="px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700">
-                    Download Excel
-                </a>
+                <form method="get" action="../../backend/reports/export_monthly.php" class="flex flex-wrap items-end gap-2">
+                    <div>
+                        <label for="downloadStartMonth" class="block text-xs font-medium text-gray-500 mb-1">Download from</label>
+                        <input type="month" id="downloadStartMonth" name="start_month" value="<?= htmlspecialchars($selectedMonth) ?>"
+                               required class="border rounded-xl px-3 py-2 bg-white">
+                    </div>
+                    <div>
+                        <label for="downloadEndMonth" class="block text-xs font-medium text-gray-500 mb-1">Download through</label>
+                        <input type="month" id="downloadEndMonth" name="end_month" value="<?= htmlspecialchars($selectedMonth) ?>"
+                               required class="border rounded-xl px-3 py-2 bg-white">
+                    </div>
+                    <button type="submit" class="px-4 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700">
+                        Download Excel
+                    </button>
+                </form>
             </div>
         </div>
 
@@ -232,6 +242,14 @@ function peso(float $amount): string {
         </section>
     </main>
     <script>
+        const downloadStartMonth = document.getElementById("downloadStartMonth");
+        const downloadEndMonth = document.getElementById("downloadEndMonth");
+        const updateEndMonthMinimum = () => {
+            downloadEndMonth.min = downloadStartMonth.value;
+        };
+        downloadStartMonth.addEventListener("change", updateEndMonthMinimum);
+        updateEndMonthMinimum();
+
         document.querySelectorAll(".monthly-details-button").forEach(button => {
             button.addEventListener("click", () => {
                 const details = document.getElementById(button.dataset.target);

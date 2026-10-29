@@ -1076,15 +1076,19 @@ function parseSingleReportDate(value) {
 }
 
 function reportDateFromFilename(filename) {
-    const dateMatches = Array.from(
-        String(filename ?? "").matchAll(/(?:^|[^\d])(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})(?=$|[^\d])/g),
-        (match) => match[1]
-    );
-    const reportDate = dateMatches.length === 1 ? parseSingleReportDate(dateMatches[0]) : null;
+    const reportDates = reportDatesFromFilename(filename);
+    const reportDate = reportDates.length === 1 ? reportDates[0] : null;
     if (!reportDate) {
         throw new Error("The Sales by Product filename must include exactly one valid report date, such as 2026-10-08.");
     }
     return reportDate;
+}
+
+function reportDatesFromFilename(filename) {
+    return Array.from(
+        String(filename ?? "").matchAll(/(?:^|[^\d])(\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{4})(?=$|[^\d])/g),
+        (match) => parseSingleReportDate(match[1])
+    ).filter(Boolean).sort();
 }
 
 function parseSalesAmount(value) {
@@ -1111,15 +1115,38 @@ function parseSalesAmount(value) {
 
 function salesColumnIndexes(headers) {
     const columnAliases = {
-        grand_total: ["total sale", "total sales", "total sale php", "total sales php", "grand total", "grand total php"],
+        grand_total: [
+            "total sale",
+            "total sales",
+            "total sale php",
+            "total sales php",
+            "total sales amount",
+            "grand total",
+            "grand total php",
+            "grand total sales",
+            "sales total"
+        ],
         total_discount: ["total discount", "total discount php", "total discounts", "discount total", "total discount amount", "total sales deduction"],
         service_charge: ["service charge", "service charge php", "service charges", "service charge total"]
     };
 
     return Object.fromEntries(Object.entries(columnAliases).map(([field, aliases]) => [
         field,
-        aliases.map((alias) => headers.findIndex((header) => normalizeHeader(header) === alias))
-            .find((column) => column !== -1) ?? -1
+        (() => {
+            const normalizedHeaders = headers.map(normalizeHeader);
+            const exactMatch = aliases
+                .map((alias) => normalizedHeaders.indexOf(alias))
+                .find((column) => column !== -1);
+            if (exactMatch !== undefined) {
+                return exactMatch;
+            }
+            if (field === "grand_total") {
+                return normalizedHeaders.findIndex((header) =>
+                    /\b(?:total sales?|grand total|sales total)\b/.test(header)
+                );
+            }
+            return -1;
+        })()
     ]));
 }
 
@@ -1192,21 +1219,19 @@ function dailySalesFromWorkbook(workbook, filename) {
 
         for (let headerRow = 0; headerRow < Math.min(rows.length, 40); headerRow += 1) {
             const headers = rows[headerRow] || [];
-            const populatedHeaders = headers.filter((header) => String(header ?? "").trim() !== "").length;
-            const dateColumn = headers.findIndex((header) => /(^| )date( |$)/.test(normalizeHeader(header)));
-            const amountColumns = salesColumnIndexes(headers);
+            const combinedHeaders = headers.map((header, columnIndex) =>
+                [rows[headerRow - 2]?.[columnIndex], rows[headerRow - 1]?.[columnIndex], header]
+                    .filter((part) => String(part ?? "").trim() !== "")
+                    .join(" ")
+            );
+            const populatedHeaders = combinedHeaders.filter((header) => String(header ?? "").trim() !== "").length;
+            const dateColumn = combinedHeaders.findIndex((header) => /(^| )date( |$)/.test(normalizeHeader(header)));
+            const amountColumns = salesColumnIndexes(combinedHeaders);
             if (populatedHeaders < 2 || amountColumns.grand_total === -1) {
                 continue;
             }
 
             const availableAmountColumns = Object.values(amountColumns).filter((column) => column !== -1);
-            const hasNumericSalesRows = rows
-                .slice(headerRow + 1, headerRow + 21)
-                .some((row) => availableAmountColumns.some((column) => parseSalesAmount((row || [])[column]) !== null));
-            if (!hasNumericSalesRows) {
-                continue;
-            }
-
             const totals = new Map();
             const reportTotals = Object.fromEntries(Object.entries(amountColumns).map(([field, column]) => [
                 field,
@@ -1286,10 +1311,7 @@ function dailySalesFromWorkbook(workbook, filename) {
             }
 
             if (reportAmountCount) {
-                const filenameDates = Array.from(
-                    String(filename ?? "").matchAll(/\d{4}[-/]\d{1,2}[-/]\d{1,2}/g),
-                    (match) => parseSingleReportDate(match[0])
-                ).filter(Boolean).sort();
+                const filenameDates = reportDatesFromFilename(filename);
                 if (filenameDates.length) {
                     return [{
                         start_date: filenameDates[0],
