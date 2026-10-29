@@ -116,7 +116,7 @@ try {
     }
 
     $cashierId = (int) $_SESSION["user_id"];
-    $totalTables = $tableNumber > 0 ? $tableNumber : 1;
+    $totalTables = $tableNumber;
     mysqli_stmt_bind_param(
         $stmt,
         "sssiiiidds",

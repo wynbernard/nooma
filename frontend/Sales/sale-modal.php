@@ -63,6 +63,7 @@
                                         id="tableNumber"
                                         placeholder="e.g., Table 4"
                                         required
+                                        
                                         class="w-full border rounded-xl px-4 py-3">
                                 </div>
 

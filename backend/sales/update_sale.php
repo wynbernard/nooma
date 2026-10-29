@@ -80,7 +80,6 @@ $notes = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 $weekNumber = (int) date("W", strtotime($date));
 $pax = max(0, (int) ($payload["pax"] ?? 0));
 $tables = max(0, (int) preg_replace("/\\D+/", "", (string) ($payload["tableNumber"] ?? "")));
-$tables = $tables > 0 ? $tables : 1;
 $grandTotal = $value("grandTotal");
 $posTotal = $saleChannel === "POS" ? $value("totalSale") : 0.0;
 
