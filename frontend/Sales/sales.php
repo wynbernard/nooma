@@ -399,7 +399,7 @@ if ($latestShiftSale !== null) {
                                         </span>
                                     </td>
                                     <td class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
-                                        ₱<?= number_format((float) $cashRemitted, 2) ?>
+                                        ₱<?= number_format((float) $cashRemitted, 0) ?>
                                     </td>
                                     <td class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
                                         ₱<?= number_format((float) $sale["service_charge_total"], 2) ?>
@@ -1358,6 +1358,118 @@ calculateOnlineTips();
         const nextSaleType = <?= json_encode($nextSaleType) ?>;
 
         let editingReportId = null;
+        let autoFillRequestId = 0;
+        let autoFilledSaleValues = null;
+        const saleAutoFillRequests = new Map();
+
+        function getSaleAutoFill(date, type) {
+            const key = `${date}:${type}`;
+            if (!saleAutoFillRequests.has(key)) {
+                const query = new URLSearchParams({
+                    summary: "1",
+                    date,
+                    sale_type: type
+                });
+                const request = fetch(`../../api/extraction.php?${query.toString()}`)
+                    .then(async response => {
+                        const result = await response.json();
+                        if (!response.ok || !result.success) {
+                            throw new Error(result.message || "POS extraction totals could not be loaded.");
+                        }
+                        return result;
+                    })
+                    .catch(error => {
+                        saleAutoFillRequests.delete(key);
+                        throw error;
+                    });
+                saleAutoFillRequests.set(key, request);
+                request.catch(() => {});
+            }
+            return saleAutoFillRequests.get(key);
+        }
+
+        async function autoFillSaleValues() {
+            const requestId = ++autoFillRequestId;
+            const cashRemittedField = document.getElementById("cashRemitted");
+            const seniorCitizenDiscountField = document.getElementById("seniorCitizenDiscount");
+
+            if (isNonPOS()) {
+                if (autoFilledSaleValues) {
+                    if (serviceCharge.value === autoFilledSaleValues.serviceCharge) {
+                        serviceCharge.value = "";
+                        serviceCharge.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                    if (cashRemittedField && cashRemittedField.value === autoFilledSaleValues.cashRemitted) {
+                        cashRemittedField.value = "";
+                        cashRemittedField.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                    if (seniorCitizenDiscountField && seniorCitizenDiscountField.value === autoFilledSaleValues.seniorCitizenDiscount) {
+                        seniorCitizenDiscountField.value = "";
+                        seniorCitizenDiscountField.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                    if (grandTotal.value === autoFilledSaleValues.grandTotal) {
+                        grandTotal.value = "";
+                        grandTotal.dispatchEvent(new Event("input", { bubbles: true }));
+                    }
+                    autoFilledSaleValues = null;
+                }
+                return;
+            }
+
+            if (editingReportId || !saleDate.value || !["Lunch", "Closing"].includes(saleType.value)) {
+                return;
+            }
+
+            const requestedDate = saleDate.value;
+            const requestedType = saleType.value;
+
+            try {
+                const result = await getSaleAutoFill(requestedDate, requestedType);
+
+                if (
+                    requestId !== autoFillRequestId ||
+                    editingReportId ||
+                    isNonPOS() ||
+                    saleDate.value !== requestedDate ||
+                    saleType.value !== requestedType
+                ) {
+                    return;
+                }
+
+                const serviceChargeValue = Number(result.serviceCharge).toFixed(2);
+                const cashRemittedValue = Number(result.cash).toFixed(0);
+                const seniorCitizenDiscountValue = Number(result.discount).toFixed(2);
+                const grandTotalValue = Number(result.grandTotal).toFixed(2);
+                serviceCharge.value = serviceChargeValue;
+                if (cashRemittedField) {
+                    cashRemittedField.value = cashRemittedValue;
+                }
+                if (seniorCitizenDiscountField) {
+                    seniorCitizenDiscountField.value = seniorCitizenDiscountValue;
+                }
+                grandTotal.value = grandTotalValue;
+                autoFilledSaleValues = {
+                    serviceCharge: serviceChargeValue,
+                    cashRemitted: cashRemittedValue,
+                    seniorCitizenDiscount: seniorCitizenDiscountValue,
+                    grandTotal: grandTotalValue
+                };
+                serviceCharge.dispatchEvent(new Event("input", { bubbles: true }));
+                if (cashRemittedField) {
+                    cashRemittedField.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+                if (seniorCitizenDiscountField) {
+                    seniorCitizenDiscountField.dispatchEvent(new Event("input", { bubbles: true }));
+                }
+                grandTotal.dispatchEvent(new Event("input", { bubbles: true }));
+            } catch (error) {
+                if (requestId === autoFillRequestId) {
+                    window.showToast(error.message || "POS extraction totals could not be loaded.", "error");
+                }
+            }
+        }
+
+        void autoFillSaleValues();
 
         function ownerImageUrl(path) {
             if (!path) {
@@ -1419,6 +1531,7 @@ calculateOnlineTips();
             saleType.classList.remove("border-red-500");
             saleDate.setCustomValidity("");
             saleType.setCustomValidity("");
+            void autoFillSaleValues();
             calculateKitchenSale();
             calculateTotalPayment();
             calculateTotalOtherPayments();
@@ -1431,7 +1544,12 @@ calculateOnlineTips();
         function setFormValue(id, value) {
             const input = document.getElementById(id);
             if (input && value !== undefined && value !== null) {
-                input.value = value;
+                if (id === "cashRemitted" && value !== "") {
+                    const amount = Number(value);
+                    input.value = Number.isFinite(amount) ? String(Math.round(amount)) : value;
+                } else {
+                    input.value = value;
+                }
             }
         }
 
@@ -1493,6 +1611,8 @@ calculateOnlineTips();
                     if (!response.ok || !result.success) {
                         throw new Error(result.message || "The sale could not be loaded.");
                     }
+                    autoFillRequestId++;
+                    autoFilledSaleValues = null;
                     editingReportId = button.dataset.reportId;
                     document.getElementById("saleModalTitle").textContent = "Edit Sale";
                     populateSaleForm(result.payload);
@@ -1552,8 +1672,11 @@ calculateOnlineTips();
         saleDate.addEventListener("input", validateSaleDateAndType);
         saleDate.addEventListener("change", validateSaleDateAndType);
         saleType.addEventListener("change", validateSaleDateAndType);
+        saleDate.addEventListener("change", () => void autoFillSaleValues());
+        saleType.addEventListener("change", () => void autoFillSaleValues());
         if (saleChannelSelect) {
             saleChannelSelect.addEventListener("change", validateSaleDateAndType);
+            saleChannelSelect.addEventListener("change", () => void autoFillSaleValues());
         }
 
         salesForm.addEventListener("change", event => {

@@ -181,6 +181,7 @@ function createEmptyTotals($cardNames)
         'count'         => 0,
         'cash'          => 0.0,
         'serviceCharge' => 0.0,
+        'discount'      => 0.0,
         'barSale'       => 0.0,
         'kitchenSale'   => 0.0,
         'creditCard'    => 0.0,
@@ -193,7 +194,7 @@ function accumulateAmounts(&$totals, $amounts, $cardNames)
 {
     $totals['count']++;
 
-    foreach (['cash', 'serviceCharge', 'barSale', 'kitchenSale', 'creditCard', 'unmappedSale'] as $key) {
+    foreach (['cash', 'serviceCharge', 'discount', 'barSale', 'kitchenSale', 'creditCard', 'unmappedSale'] as $key) {
         $totals[$key] += $amounts[$key];
     }
 
@@ -324,11 +325,13 @@ function getTransactionAmounts(
     $productEndpoint,
     $apiUsername,
     $apiPassword,
-    &$productCache
+    &$productCache,
+    $includeItemBreakdown = true
 ) {
     $amounts = [
         'cash'          => 0.0,
         'serviceCharge' => numberValue($transaction['serviceCharge'] ?? 0),
+        'discount'      => 0.0,
         'barSale'       => 0.0,
         'kitchenSale'   => 0.0,
         'creditCard'    => 0.0,
@@ -365,9 +368,30 @@ function getTransactionAmounts(
         }
     }
 
-    // ---------- BAR / KITCHEN ITEM TOTALS ----------
     $items = $transaction['items'] ?? [];
 
+    if (is_array($items)) {
+        foreach ($items as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+
+            $itemType = strtolower(trim((string) ($item['itemType'] ?? '')));
+
+            // Prevent double-counting service charge items
+            if ($itemType === 'servicecharge') {
+                continue;
+            }
+
+            $amounts['discount'] += numberValue($item['deductedTax'] ?? 0);
+        }
+    }
+
+    if (!$includeItemBreakdown) {
+        return $amounts;
+    }
+
+    // ---------- BAR / KITCHEN ITEM TOTALS ----------
     if (is_array($items)) {
         foreach ($items as $item) {
             if (!is_array($item)) {
@@ -471,19 +495,23 @@ function getTransactionAmounts(
 // =====================================================
 
 $today = date('Y-m-d');
-$from  = $_POST['from'] ?? $_GET['from'] ?? $today;
-$to    = $_POST['to']   ?? $_GET['to']   ?? $today;
+$isExport = isset($_GET['export']);
+$isAutoFill = isset($_GET['summary']) && $_GET['summary'] === '1';
+$autoFillDate = trim((string) ($_GET['date'] ?? ''));
+$autoFillSaleType = trim((string) ($_GET['sale_type'] ?? ''));
+$from = $isAutoFill ? $autoFillDate : ($_POST['from'] ?? $_GET['from'] ?? $today);
+$to = $isAutoFill ? $autoFillDate : ($_POST['to'] ?? $_GET['to'] ?? $today);
 
 $error     = '';
 $rows      = [];
 $extracted = false;
-$isExport  = isset($_GET['export']);
+$autoFillHttpStatus = 200;
 
 $lunchTotals  = createEmptyTotals($cardNames);
 $dinnerTotals = createEmptyTotals($cardNames);
 $grandTotals  = createEmptyTotals($cardNames);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport) {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
     $validFrom = DateTime::createFromFormat('!Y-m-d', $from);
     $validTo   = DateTime::createFromFormat('!Y-m-d', $to);
 
@@ -494,10 +522,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport) {
         $validTo->format('Y-m-d') !== $to
     ) {
         $error = 'Please select valid dates.';
+        $autoFillHttpStatus = 400;
     } elseif ($from > $to) {
         $error = 'The start date cannot be later than the end date.';
+        $autoFillHttpStatus = 400;
+    } elseif ($isAutoFill && !in_array($autoFillSaleType, ['Lunch', 'Closing'], true)) {
+        $error = 'Please select a valid sale type.';
+        $autoFillHttpStatus = 400;
     } elseif ($apiUsername === '' || $apiPassword === '') {
         $error = 'Configure your StoreHub username and password in the PHP code.';
+        $autoFillHttpStatus = 500;
     } else {
         try {
             // 1-day buffer on each side so no transaction near midnight is missed.
@@ -550,7 +584,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport) {
                     $productEndpoint,
                     $apiUsername,
                     $apiPassword,
-                    $productCache
+                    $productCache,
+                    !$isAutoFill
                 );
 
                 if ($period === 'Dinner') {
@@ -919,8 +954,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport) {
             }
         } catch (Exception $e) {
             $error = $e->getMessage();
+            $autoFillHttpStatus = 502;
         }
     }
+}
+
+if ($isAutoFill) {
+    header('Content-Type: application/json; charset=utf-8');
+
+    if ($error !== '') {
+        http_response_code($autoFillHttpStatus);
+        echo json_encode(['success' => false, 'message' => $error]);
+        exit;
+    }
+
+    $shiftTotals = $autoFillSaleType === 'Lunch' ? $lunchTotals : $dinnerTotals;
+    echo json_encode([
+        'success' => true,
+        'cash' => round($shiftTotals['cash'], 2),
+        'serviceCharge' => round($shiftTotals['serviceCharge'], 2),
+        'discount' => round($shiftTotals['discount'], 2),
+        'grandTotal' => round($shiftTotals['cash'] + $shiftTotals['creditCard'], 2)
+    ]);
+    exit;
 }
 
 // Shift summary cards (Lunch / Dinner / Grand Total) used by the HTML below

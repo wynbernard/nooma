@@ -1,4 +1,4 @@
-﻿        <!-- SALES INPUT MODAL -->
+        <!-- SALES INPUT MODAL -->
         <div id="saleModal" class="hidden fixed inset-0 z-50 overflow-y-auto bg-gray-950/60 p-2 backdrop-blur-sm sm:p-4 md:p-6">
             <div class="min-h-full flex items-center justify-center">
                 <div class="flex h-[calc(100vh-1rem)] w-full max-w-7xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl ring-1 ring-black/10 sm:h-[calc(100vh-2rem)] md:h-[calc(100vh-3rem)]">
@@ -212,9 +212,9 @@
                                             </label>
                                             <input type="number"
                                                 id="cashRemitted"
-                                                step="0.01"
+                                                step="1"
                                                
-                                                placeholder="0.00"
+                                                placeholder="0"
                                                 class="w-full border rounded-xl px-4 py-3">
                                         </div>
 
@@ -1208,4 +1208,3 @@
                 </div>
             </div>
         </div>  
-
