@@ -618,7 +618,9 @@ $isPaidNote = static function ($note): bool {
                                                             <?= htmlspecialchars(ucwords(preg_replace("/(?<!^)[A-Z]/", " $0", $fieldName))) ?>
                                                         </p>
                                                         <p class="text-sm font-semibold text-gray-900 mt-1">
-                                                            <?= peso((float) $fieldValue) ?>
+                                                            <?= in_array($fieldName, $integerFields, true)
+                                                                ? number_format((float) $fieldValue, 0)
+                                                                : peso((float) $fieldValue) ?>
                                                         </p>
                                                     </div>
                                                 <?php endforeach; ?>

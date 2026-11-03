@@ -22,14 +22,24 @@ $username = $_SESSION["username"] ?? "admin";
 $inventoryDepartment = basename((string) ($_SERVER["PHP_SELF"] ?? "")) === "kitchenInventory.php"
     ? "Kitchen"
     : (basename((string) ($_SERVER["PHP_SELF"] ?? "")) === "promoInventory.php" ? "Promo" : "Bar");
+$inventoryReturnPage = basename((string) ($_SERVER["PHP_SELF"] ?? ""));
+if (!in_array($inventoryReturnPage, ["barInventory.php", "kitchenInventory.php", "promoInventory.php"], true)) {
+    $inventoryReturnPage = "barInventory.php";
+}
 $page_title = $inventoryDepartment . " Inventory";
-$page_description = $inventoryDepartment . " stock register";
+$page_description = $inventoryDepartment . " stock register; synced transaction quantities are recorded in Sold / Used.";
 $inventoryDateFilter = trim((string) ($_GET["inventory_date"] ?? ""));
 
 require_once __DIR__ . "/../../backend/config/database.php";
 
 $success_message = "";
 $error_message = "";
+$inventorySyncMessage = (string) ($_SESSION["inventory_sync_success"] ?? "");
+$inventorySyncError = (string) ($_SESSION["inventory_sync_error"] ?? "");
+unset($_SESSION["inventory_sync_success"], $_SESSION["inventory_sync_error"]);
+if (empty($_SESSION["inventory_sync_csrf_token"])) {
+    $_SESSION["inventory_sync_csrf_token"] = bin2hex(random_bytes(32));
+}
 if ($inventoryDateFilter !== "") {
     $filterDateObject = DateTime::createFromFormat("!Y-m-d", $inventoryDateFilter);
     if (!$filterDateObject || $filterDateObject->format("Y-m-d") !== $inventoryDateFilter) {
@@ -193,10 +203,60 @@ if ($inventoryResult) {
     while ($row = mysqli_fetch_assoc($inventoryResult)) {
         $row["sold"] = $row["sold_used"] ?? 0.00; 
         $row["used"] = 0.00;
+        if (str_starts_with((string) ($row["remarks"] ?? ""), "Synced from StoreHub transactions for ")) {
+            $row["ending"] = (float) $row["beginning"]
+                + (float) $row["purchases"]
+                - (float) $row["sold_used"];
+        }
         $inventoryItems[] = $row;
     }
 }
 mysqli_stmt_close($inventoryStmt);
+
+$inventorySavedDates = [];
+$savedDatesResult = mysqli_query(
+    $conn,
+    "SELECT DISTINCT inventory_date FROM inventory WHERE inventory_date <= CURDATE() ORDER BY inventory_date"
+);
+if (!$savedDatesResult) {
+    throw new RuntimeException("Could not load saved inventory dates: " . mysqli_error($conn));
+}
+while ($savedDateRow = mysqli_fetch_assoc($savedDatesResult)) {
+    $inventorySavedDates[] = (string) $savedDateRow["inventory_date"];
+}
+mysqli_free_result($savedDatesResult);
+
+$groupedInventoryItems = [];
+foreach ($inventoryItems as $item) {
+    $groupKey = serialize([
+        strtolower(trim((string) $item["department"])),
+        strtolower(trim((string) $item["item_description"])),
+        strtolower(trim((string) $item["unit"]))
+    ]);
+
+    if (!isset($groupedInventoryItems[$groupKey])) {
+        $item["source_items"] = [$item];
+        $groupedInventoryItems[$groupKey] = $item;
+        continue;
+    }
+
+    $groupedItem = &$groupedInventoryItems[$groupKey];
+    foreach (["quantity", "beginning", "purchases", "sold_used", "ending"] as $field) {
+        $groupedItem[$field] = (float) $groupedItem[$field] + (float) $item[$field];
+    }
+    $groupedItem["source_items"][] = $item;
+    $remarks = array_filter([
+        trim((string) ($groupedItem["remarks"] ?? "")),
+        trim((string) ($item["remarks"] ?? ""))
+    ]);
+    $groupedItem["remarks"] = implode(" · ", array_unique($remarks));
+    unset($groupedItem);
+}
+$inventoryItems = array_values($groupedInventoryItems);
+foreach ($inventoryItems as &$item) {
+    $item["sold"] = (float) $item["sold_used"];
+}
+unset($item);
 
 $totalItemsCount = count($inventoryItems);
 $totalStockQuantity = array_sum(array_map(static fn (array $row): float => (float) $row["quantity"], $inventoryItems));

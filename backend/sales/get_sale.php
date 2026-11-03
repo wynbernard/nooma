@@ -18,7 +18,7 @@ if ($reportId <= 0) {
     exit;
 }
 
-$stmt = mysqli_prepare($conn, "SELECT report_date, shift_name, total_tables, total_pax, telegram_declared_total, pos_sales_total, notes FROM daily_reports WHERE report_id = ? LIMIT 1");
+$stmt = mysqli_prepare($conn, "SELECT dr.report_date, dr.shift_name, dr.total_tables, dr.total_pax, dr.telegram_declared_total, dr.pos_sales_total, dr.notes, u.full_name AS cashier_name FROM daily_reports dr LEFT JOIN users u ON u.user_id = dr.cashier_id WHERE dr.report_id = ? LIMIT 1");
 mysqli_stmt_bind_param($stmt, "i", $reportId);
 mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
@@ -40,6 +40,7 @@ if (!empty($report["notes"])) {
 }
 
 $payload["saleDate"] = $report["report_date"];
+$payload["cashierName"] = trim((string) ($payload["cashierName"] ?? $report["cashier_name"] ?? ""));
 $savedChannel = strtoupper(trim((string) ($payload["saleChannel"] ?? "")));
 $shiftName = (string) ($report["shift_name"] ?? "");
 if ($savedChannel === "NON POS" || ($savedChannel !== "POS" && stripos($shiftName, "Non POS") === 0)) {

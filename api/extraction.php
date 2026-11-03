@@ -16,6 +16,42 @@
 
 date_default_timezone_set('Asia/Manila'); // only used for the default "today" value
 
+$isInventorySync = $_SERVER['REQUEST_METHOD'] === 'POST'
+    && isset($_POST['inventory_sync'])
+    && $_POST['inventory_sync'] === '1';
+$isInventoryJsonSync = $isInventorySync
+    && strpos((string) ($_SERVER['HTTP_ACCEPT'] ?? ''), 'application/json') !== false;
+
+if ($isInventorySync) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+        http_response_code(403);
+        if ($isInventoryJsonSync) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['success' => false, 'message' => 'Only administrators can sync transactions to inventory.']);
+            exit;
+        }
+        exit('Only administrators can sync transactions to inventory.');
+    }
+
+    if ($isInventorySync) {
+        $expectedToken = (string) ($_SESSION['inventory_sync_csrf_token'] ?? '');
+        $providedToken = (string) ($_POST['csrf_token'] ?? '');
+        if ($expectedToken === '' || !hash_equals($expectedToken, $providedToken)) {
+            http_response_code(403);
+            if ($isInventoryJsonSync) {
+                header('Content-Type: application/json; charset=utf-8');
+                echo json_encode(['success' => false, 'message' => 'The inventory sync request could not be verified. Reload the page and try again.']);
+                exit;
+            }
+            exit('The inventory sync request could not be verified. Reload the inventory page and try again.');
+        }
+    }
+}
+
 // ---------- API SETTINGS ----------
 // Tip: move these to environment variables or a file outside the web root.
 $endpoint        = 'https://api.storehubhq.com/transactions';
@@ -147,11 +183,114 @@ function fetchProductDetails($productId, $productEndpoint, $username, $password,
     return $cache[$productId];
 }
 
+function fetchProductDetailsBatch($productIds, $productEndpoint, $username, $password, &$cache)
+{
+    $productIds = array_values(array_unique(array_filter(
+        $productIds,
+        static fn ($productId): bool => $productId !== '' && !array_key_exists($productId, $cache)
+    )));
+
+    foreach (array_chunk($productIds, 8) as $productIdBatch) {
+        $multiHandle = curl_multi_init();
+        if ($multiHandle === false) {
+            throw new RuntimeException('Could not initialize StoreHub product requests.');
+        }
+
+        $handles = [];
+        try {
+            foreach ($productIdBatch as $productId) {
+                $handle = curl_init($productEndpoint . '/' . rawurlencode($productId));
+                if ($handle === false) {
+                    throw new RuntimeException('Could not initialize a StoreHub product request.');
+                }
+
+                curl_setopt_array($handle, [
+                    CURLOPT_RETURNTRANSFER => true,
+                    CURLOPT_HTTPAUTH => CURLAUTH_BASIC,
+                    CURLOPT_USERPWD => $username . ':' . $password,
+                    CURLOPT_CONNECTTIMEOUT => 10,
+                    CURLOPT_TIMEOUT => 30,
+                    CURLOPT_HTTPHEADER => ['Accept: application/json']
+                ]);
+                if (curl_multi_add_handle($multiHandle, $handle) !== CURLM_OK) {
+                    curl_close($handle);
+                    throw new RuntimeException('Could not queue a StoreHub product request.');
+                }
+                $handles[] = [$productId, $handle];
+            }
+
+            do {
+                $multiStatus = curl_multi_exec($multiHandle, $running);
+                if ($multiStatus !== CURLM_OK) {
+                    throw new RuntimeException('StoreHub product request batch failed.');
+                }
+                if ($running > 0) {
+                    $selected = curl_multi_select($multiHandle, 1.0);
+                    if ($selected === -1) {
+                        usleep(10000);
+                    }
+                }
+            } while ($running > 0);
+
+            foreach ($handles as [$productId, $handle]) {
+                $response = curl_multi_getcontent($handle);
+                $httpCode = curl_getinfo($handle, CURLINFO_HTTP_CODE);
+                $json = is_string($response) && $httpCode >= 200 && $httpCode < 300
+                    ? json_decode($response, true)
+                    : null;
+                $cache[$productId] = is_array($json) ? $json : null;
+            }
+        } finally {
+            foreach ($handles as [, $handle]) {
+                curl_multi_remove_handle($multiHandle, $handle);
+                curl_close($handle);
+            }
+            curl_multi_close($multiHandle);
+        }
+    }
+}
+
+function getProductName($product)
+{
+    if (!is_array($product)) {
+        return '';
+    }
+
+    foreach (['productName', 'name', 'itemName', 'displayName'] as $key) {
+        if (isset($product[$key]) && is_scalar($product[$key])) {
+            $name = trim((string) $product[$key]);
+            if ($name !== '') {
+                return $name;
+            }
+        }
+    }
+
+    foreach (['product', 'data', 'result'] as $key) {
+        if (isset($product[$key]) && is_array($product[$key])) {
+            $name = getProductName($product[$key]);
+            if ($name !== '') {
+                return $name;
+            }
+        }
+    }
+
+    return '';
+}
+
 // Read the category name from a StoreHub product response (string, or object with a name)
 function getProductCategoryName($product)
 {
     if (!is_array($product)) {
         return '';
+    }
+
+    foreach (['product', 'data', 'result'] as $key) {
+        if (isset($product[$key]) && is_array($product[$key])) {
+            $category = getProductCategoryName($product[$key]);
+            if ($category !== '') {
+                return $category;
+            }
+        }
     }
 
     foreach (['category', 'categoryName', 'productCategory'] as $key) {
@@ -490,6 +629,56 @@ function getTransactionAmounts(
     return $amounts;
 }
 
+function getInventoryDepartment($item, $productEndpoint, $username, $password, &$productCache)
+{
+    $itemName = (string) ($item['productName'] ?? $item['itemName'] ?? $item['name'] ?? '');
+    $category = $item['category'] ?? $item['productCategory'] ?? '';
+    if (is_array($category)) {
+        $category = $category['name'] ?? $category['categoryName'] ?? '';
+    }
+    $category = (string) $category;
+    $classification = strtolower(trim($category . ' ' . $itemName));
+
+    if (strpos($classification, 'promo') !== false) {
+        return 'Promo';
+    }
+    if (
+        strpos($classification, 'kitchen') !== false
+        || strpos($classification, 'cooking fee') !== false
+    ) {
+        return 'Kitchen';
+    }
+    if (
+        strpos($classification, 'bar') !== false
+        || strpos($classification, 'corkage') !== false
+        || strpos($classification, 'bottle') !== false
+        || strpos($classification, 'beer') !== false
+        || strpos($classification, 'heineken') !== false
+        || strpos($classification, 'vodka') !== false
+        || strpos($classification, 'wine') !== false
+        || strpos($classification, 'cocktail') !== false
+        || strpos($classification, 'spirits') !== false
+        || strpos($classification, 'drink') !== false
+        || strpos($classification, 'beverage') !== false
+    ) {
+        return 'Bar';
+    }
+
+    $productId = (string) ($item['productId'] ?? '');
+    if ($productId !== '') {
+        $details = fetchProductDetails($productId, $productEndpoint, $username, $password, $productCache);
+        $apiCategory = getProductCategoryName($details);
+        if (strpos($apiCategory, 'promo') !== false) {
+            return 'Promo';
+        }
+        if (strpos($apiCategory, 'bar') !== false) {
+            return 'Bar';
+        }
+    }
+
+    return 'Kitchen';
+}
+
 // =====================================================
 // DATE RANGE AND EXTRACTION
 // =====================================================
@@ -499,11 +688,20 @@ $isExport = isset($_GET['export']);
 $isAutoFill = isset($_GET['summary']) && $_GET['summary'] === '1';
 $autoFillDate = trim((string) ($_GET['date'] ?? ''));
 $autoFillSaleType = trim((string) ($_GET['sale_type'] ?? ''));
-$from = $isAutoFill ? $autoFillDate : ($_POST['from'] ?? $_GET['from'] ?? $today);
-$to = $isAutoFill ? $autoFillDate : ($_POST['to'] ?? $_GET['to'] ?? $today);
+$from = $isInventorySync
+    ? trim((string) ($_POST['sync_date'] ?? ''))
+    : ($isAutoFill ? $autoFillDate : ($_POST['from'] ?? $_GET['from'] ?? $today));
+$to = $isInventorySync
+    ? $from
+    : ($isAutoFill ? $autoFillDate : ($_POST['to'] ?? $_GET['to'] ?? $today));
+$inventoryReturnPage = basename((string) ($_POST['return_page'] ?? 'barInventory.php'));
+if (!in_array($inventoryReturnPage, ['barInventory.php', 'kitchenInventory.php', 'promoInventory.php'], true)) {
+    $inventoryReturnPage = 'barInventory.php';
+}
 
 $error     = '';
 $rows      = [];
+$inventoryProducts = [];
 $extracted = false;
 $autoFillHttpStatus = 200;
 
@@ -526,6 +724,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
     } elseif ($from > $to) {
         $error = 'The start date cannot be later than the end date.';
         $autoFillHttpStatus = 400;
+    } elseif ($isInventorySync && $from !== $to) {
+        $error = 'Choose one date to sync to inventory.';
+        $autoFillHttpStatus = 400;
     } elseif ($isAutoFill && !in_array($autoFillSaleType, ['Lunch', 'Closing'], true)) {
         $error = 'Please select a valid sale type.';
         $autoFillHttpStatus = 400;
@@ -534,6 +735,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
         $autoFillHttpStatus = 500;
     } else {
         try {
+            if ($isInventorySync) {
+                require_once __DIR__ . '/../backend/config/database.php';
+                $savedDateStatement = mysqli_prepare(
+                    $conn,
+                    'SELECT inventory_id FROM inventory WHERE inventory_date = ? LIMIT 1'
+                );
+                if (!$savedDateStatement) {
+                    throw new RuntimeException('Could not check whether this inventory date was already saved: ' . mysqli_error($conn));
+                }
+                mysqli_stmt_bind_param($savedDateStatement, 's', $from);
+                if (!mysqli_stmt_execute($savedDateStatement)) {
+                    throw new RuntimeException('Could not check saved inventory date: ' . mysqli_stmt_error($savedDateStatement));
+                }
+                $savedDateResult = mysqli_stmt_get_result($savedDateStatement);
+                if (!$savedDateResult) {
+                    throw new RuntimeException('Could not read the saved inventory date check result.');
+                }
+                $dateAlreadySaved = mysqli_fetch_assoc($savedDateResult) !== null;
+                mysqli_stmt_close($savedDateStatement);
+
+                if ($dateAlreadySaved) {
+                    $syncMessage = 'Inventory for ' . $from . ' is already saved. No transactions were synced.';
+                    if ($isInventoryJsonSync) {
+                        header('Content-Type: application/json; charset=utf-8');
+                        echo json_encode([
+                            'success' => true,
+                            'skipped' => true,
+                            'message' => $syncMessage,
+                            'inventory' => []
+                        ]);
+                        exit;
+                    }
+
+                    $_SESSION['inventory_sync_success'] = $syncMessage;
+                    header(
+                        'Location: ../frontend/Inventory/' . rawurlencode($inventoryReturnPage)
+                        . '?inventory_date=' . rawurlencode($from)
+                    );
+                    exit;
+                }
+            }
+
             // 1-day buffer on each side so no transaction near midnight is missed.
             // The strict date filter below removes anything outside the selected range.
             $apiFrom = (clone $validFrom)->modify('-1 day')->format('Y-m-d');
@@ -546,6 +789,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
                 $apiFrom,
                 $apiTo
             );
+
+            if ($isInventorySync) {
+                $inventoryProductIds = [];
+                foreach ($transactions as $transaction) {
+                    if (!is_array($transaction)) {
+                        continue;
+                    }
+                    $cancelled = $transaction['isCancelled'] ?? false;
+                    if (
+                        $cancelled === true ||
+                        $cancelled === 1 ||
+                        $cancelled === '1' ||
+                        strtolower((string) $cancelled) === 'true'
+                    ) {
+                        continue;
+                    }
+
+                    $transactionDate = extractDateFromTransactionTime($transaction['transactionTime'] ?? '');
+                    if ($transactionDate < $from || $transactionDate > $to) {
+                        continue;
+                    }
+                    $transactionItems = $transaction['items'] ?? [];
+                    if (!is_array($transactionItems)) {
+                        continue;
+                    }
+                    foreach ($transactionItems as $item) {
+                        if (!is_array($item) || strtolower(trim((string) ($item['itemType'] ?? ''))) === 'servicecharge') {
+                            continue;
+                        }
+                        $productId = trim((string) ($item['productId'] ?? ''));
+                        if ($productId !== '') {
+                            $inventoryProductIds[] = $productId;
+                        }
+                    }
+                }
+                fetchProductDetailsBatch(
+                    $inventoryProductIds,
+                    $productEndpoint,
+                    $apiUsername,
+                    $apiPassword,
+                    $productCache
+                );
+            }
 
             foreach ($transactions as $transaction) {
                 if (!is_array($transaction)) {
@@ -576,6 +862,63 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
                 $formattedDateTime = formatTransactionDateTime($rawTime);
                 $period            = classifyMealPeriod($rawTime, $SHIFT_CUTOFF);
 
+                if ($isInventorySync && is_array($transaction['items'] ?? null)) {
+                    foreach ($transaction['items'] as $item) {
+                        if (!is_array($item) || strtolower(trim((string) ($item['itemType'] ?? ''))) === 'servicecharge') {
+                            continue;
+                        }
+
+                        $productId = trim((string) ($item['productId'] ?? ''));
+                        $itemName = trim((string) ($item['productName'] ?? $item['itemName'] ?? $item['name'] ?? ''));
+                        if ($itemName === '' && $productId !== '') {
+                            $productDetails = fetchProductDetails(
+                                $productId,
+                                $productEndpoint,
+                                $apiUsername,
+                                $apiPassword,
+                                $productCache
+                            );
+                            $apiProductName = getProductName($productDetails);
+                            if ($apiProductName !== '') {
+                                $itemName = $apiProductName;
+                            }
+                        }
+                        if ($itemName === '' && $productId !== '') {
+                            throw new RuntimeException(
+                                'Could not get a product name from StoreHub for product ID ' . $productId . '.'
+                            );
+                        }
+                        if ($itemName === '') {
+                            continue;
+                        }
+                        if (strlen($itemName) > 255) {
+                            throw new RuntimeException('StoreHub product name exceeds the inventory description limit.');
+                        }
+
+                        $itemQuantity = $item['quantity'] ?? 1;
+                        if (!is_numeric($itemQuantity) || !is_finite((float) $itemQuantity)) {
+                            continue;
+                        }
+
+                        $department = getInventoryDepartment(
+                            $item,
+                            $productEndpoint,
+                            $apiUsername,
+                            $apiPassword,
+                            $productCache
+                        );
+                        $productKey = strtolower($department) . '|' . strtolower($itemName);
+                        if (!isset($inventoryProducts[$productKey])) {
+                            $inventoryProducts[$productKey] = [
+                                'name' => $itemName,
+                                'department' => $department,
+                                'quantity' => 0.0
+                            ];
+                        }
+                        $inventoryProducts[$productKey]['quantity'] += (float) $itemQuantity;
+                    }
+                }
+
                 $amounts = getTransactionAmounts(
                     $transaction,
                     $BAR_PRODUCT_IDS,
@@ -585,7 +928,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
                     $apiUsername,
                     $apiPassword,
                     $productCache,
-                    !$isAutoFill
+                    !$isAutoFill && !$isInventorySync
                 );
 
                 if ($period === 'Dinner') {
@@ -608,6 +951,137 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
                     'unmappedSale'  => $amounts['unmappedSale'],
                     'cardTypes'     => $amounts['cardTypes']
                 ];
+            }
+
+            if ($isInventorySync) {
+                require_once __DIR__ . '/../backend/config/database.php';
+                if (!mysqli_begin_transaction($conn)) {
+                    throw new RuntimeException('Could not start inventory transaction: ' . mysqli_error($conn));
+                }
+
+                try {
+                    $existingStatement = mysqli_prepare(
+                        $conn,
+                        'SELECT inventory_id, department, item_description FROM inventory WHERE inventory_date = ?'
+                    );
+                    $updateStatement = mysqli_prepare(
+                        $conn,
+                        'UPDATE inventory SET sold_used = ?, ending = beginning + purchases - ? WHERE inventory_id = ?'
+                    );
+                    $insertStatement = mysqli_prepare(
+                        $conn,
+                        "INSERT INTO inventory
+                            (inventory_date, counted_by, department, type, item_description, quantity, unit, beginning, purchases, sold_used, ending, remarks)
+                         VALUES (?, ?, ?, 'Product', ?, 0, 'pcs', 0, 0, ?, -?, ?)"
+                    );
+                    if (!$existingStatement || !$updateStatement || !$insertStatement) {
+                        throw new RuntimeException('Could not prepare inventory sync statements: ' . mysqli_error($conn));
+                    }
+
+                    mysqli_stmt_bind_param($existingStatement, 's', $from);
+                    if (!mysqli_stmt_execute($existingStatement)) {
+                        throw new RuntimeException('Could not load existing inventory products: ' . mysqli_stmt_error($existingStatement));
+                    }
+                    $existingProducts = [];
+                    $existingResult = mysqli_stmt_get_result($existingStatement);
+                    while ($existing = mysqli_fetch_assoc($existingResult)) {
+                        $key = strtolower(trim((string) $existing['department']))
+                            . '|' . strtolower(trim((string) $existing['item_description']));
+                        $existingProducts[$key] = (int) $existing['inventory_id'];
+                    }
+
+                    $addedProducts = 0;
+                    $updatedProducts = 0;
+                    $savedInventoryProducts = [];
+                    $countedBy = (string) ($_SESSION['full_name'] ?? 'Administrator');
+                    $remarks = 'Synced from StoreHub transactions for ' . $from . '.';
+                    foreach ($inventoryProducts as $product) {
+                        $key = strtolower($product['department']) . '|' . strtolower($product['name']);
+                        $soldQuantity = $product['quantity'];
+                        if (isset($existingProducts[$key])) {
+                            $inventoryId = $existingProducts[$key];
+                            mysqli_stmt_bind_param($updateStatement, 'ddi', $soldQuantity, $soldQuantity, $inventoryId);
+                            if (!mysqli_stmt_execute($updateStatement)) {
+                                throw new RuntimeException('Could not update sold quantity: ' . mysqli_stmt_error($updateStatement));
+                            }
+                            $updatedProducts++;
+                        } else {
+                            $productName = $product['name'];
+                            $department = $product['department'];
+                            mysqli_stmt_bind_param(
+                                $insertStatement,
+                                'ssssdds',
+                                $from,
+                                $countedBy,
+                                $department,
+                                $productName,
+                                $soldQuantity,
+                                $soldQuantity,
+                                $remarks
+                            );
+                            if (!mysqli_stmt_execute($insertStatement)) {
+                                throw new RuntimeException('Could not add transaction product: ' . mysqli_stmt_error($insertStatement));
+                            }
+                            $inventoryId = (int) mysqli_insert_id($conn);
+                            $existingProducts[$key] = $inventoryId;
+                            $addedProducts++;
+                        }
+
+                        $savedInventoryProducts[] = [
+                            'inventory_id' => $inventoryId,
+                            'inventory_date' => $from,
+                            'counted_by' => $countedBy,
+                            'department' => $product['department'],
+                            'type' => 'Product',
+                            'item_description' => $product['name'],
+                            'quantity' => 0,
+                            'unit' => 'pcs',
+                            'beginning' => 0,
+                            'purchases' => 0,
+                            'sold_used' => $soldQuantity,
+                            'ending' => -$soldQuantity,
+                            'remarks' => $remarks,
+                            'created_at' => date('Y-m-d H:i:s')
+                        ];
+                    }
+
+                    mysqli_stmt_close($existingStatement);
+                    mysqli_stmt_close($updateStatement);
+                    mysqli_stmt_close($insertStatement);
+                    if (!mysqli_commit($conn)) {
+                        throw new RuntimeException('Could not save transaction products: ' . mysqli_error($conn));
+                    }
+                } catch (Throwable $syncError) {
+                    mysqli_rollback($conn);
+                    throw $syncError;
+                }
+
+                $syncMessage = count($inventoryProducts) === 0
+                    ? 'No product items were found in StoreHub transactions for ' . $from . '.'
+                    : sprintf(
+                        'StoreHub sync complete for %s: %d products added and %d updated.',
+                        $from,
+                        $addedProducts,
+                        $updatedProducts
+                    );
+                if ($isInventoryJsonSync) {
+                    header('Content-Type: application/json; charset=utf-8');
+                    echo json_encode([
+                        'success' => true,
+                        'message' => $syncMessage,
+                        'date' => $from,
+                        'products' => array_values($inventoryProducts),
+                        'inventory' => $savedInventoryProducts
+                    ]);
+                    exit;
+                }
+
+                $_SESSION['inventory_sync_success'] = $syncMessage;
+                header(
+                    'Location: ../frontend/Inventory/' . rawurlencode($inventoryReturnPage)
+                    . '?inventory_date=' . rawurlencode($from)
+                );
+                exit;
             }
 
             // Sort by transaction date/time (oldest first)
@@ -952,11 +1426,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' || $isExport || $isAutoFill) {
                 echo $xml;
                 exit;
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             $error = $e->getMessage();
             $autoFillHttpStatus = 502;
         }
     }
+}
+
+if ($isInventorySync && $error !== '') {
+    error_log('StoreHub inventory sync failed: ' . $error);
+    if ($isInventoryJsonSync) {
+        http_response_code($autoFillHttpStatus);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['success' => false, 'message' => $error]);
+        exit;
+    }
+    $_SESSION['inventory_sync_error'] = 'StoreHub inventory sync failed. Check the transaction connection and selected date, then try again.';
+    header(
+        'Location: ../frontend/Inventory/' . rawurlencode($inventoryReturnPage)
+        . '?inventory_date=' . rawurlencode($from)
+    );
+    exit;
 }
 
 if ($isAutoFill) {

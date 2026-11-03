@@ -21,6 +21,10 @@ if ($reportId <= 0 || !is_array($payload)) {
     echo json_encode(["success" => false, "message" => "Invalid sales data."]);
     exit;
 }
+$payload["cashierName"] = trim((string) ($payload["cashierName"] ?? $_SESSION["full_name"] ?? ""));
+if ($payload["cashierName"] === "") {
+    $payload["cashierName"] = "Administrator";
+}
 
 $money = static function ($value): float {
     $value = str_replace(",", "", (string) $value);

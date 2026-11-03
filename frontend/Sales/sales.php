@@ -296,6 +296,7 @@ if ($latestShiftSale !== null) {
                         <tr>
                             <th class="px-6 py-3.5">Date</th>
                             <th class="px-6 py-3.5">Shift</th>
+                            <th class="px-6 py-3.5">Cashier Name</th>
                             <th class="px-6 py-3.5">Cash Remitted</th>
                             <th class="px-6 py-3.5">Service Charge</th>
                             <th class="px-6 py-3.5">Tables / Pax</th>
@@ -307,7 +308,7 @@ if ($latestShiftSale !== null) {
                     <tbody id="salesTableBody" class="divide-y divide-gray-100 text-gray-600">
                         <?php if (empty($sales)): ?>
                             <tr>
-                                <td colspan="7" class="px-6 py-12 text-center text-gray-400 font-medium">
+                                <td colspan="9" class="px-6 py-12 text-center text-gray-400 font-medium">
                                     No saved sales found. Try adjusting your filters or add a new record.
                                 </td>
                             </tr>
@@ -320,6 +321,12 @@ if ($latestShiftSale !== null) {
                                 $ownerImages = [];
                                 $unpaidSaleAccounts = [];
                                 $savedFields = json_decode($sale["notes"] ?? "", true);
+                                $cashierName = is_array($savedFields)
+                                    ? trim((string) ($savedFields["cashierName"] ?? ""))
+                                    : "";
+                                if ($cashierName === "") {
+                                    $cashierName = (string) $sale["full_name"];
+                                }
                                 $saleChannel = "pos";
                                 if (is_array($savedFields)) {
                                     $cashRemitted = (float) str_replace(",", "", (string) ($savedFields["cashRemitted"] ?? 0));
@@ -398,6 +405,9 @@ if ($latestShiftSale !== null) {
                                             <?= htmlspecialchars($sale["shift_name"]) ?>
                                         </span>
                                     </td>
+                                    <td class="px-6 py-4 font-medium text-gray-700 whitespace-nowrap">
+                                        <?= htmlspecialchars($cashierName, ENT_QUOTES, "UTF-8") ?>
+                                    </td>
                                     <td class="px-6 py-4 font-semibold text-gray-900 whitespace-nowrap">
                                         ₱<?= number_format((float) $cashRemitted, 0) ?>
                                     </td>
@@ -459,7 +469,7 @@ if ($latestShiftSale !== null) {
                             data-has-unpaid="<?= $hasUnpaidAccount ? 'true' : 'false' ?>" 
                             data-sale-channel="<?= $saleChannel ?>">
                             
-                            <td colspan="7" class="px-5 py-5">
+                            <td colspan="9" class="px-5 py-5">
                                 <div class="bg-white border rounded-xl p-4">
                                     
                                     <!-- Header Section with Search Box -->
@@ -1957,7 +1967,7 @@ calculateOnlineTips();
 
                     noResultsRow.innerHTML = `
                         <td
-                            colspan="7"
+                            colspan="9"
                             class="px-5 py-8 text-center text-gray-500"
                         >
                             No sales found matching your search.
@@ -2089,7 +2099,7 @@ calculateOnlineTips();
                         "noSalesSearchResults";
 
                     noResultsRow.innerHTML = `
-                        <td colspan="7"
+                        <td colspan="9"
                             class="px-5 py-10 text-center">
 
                             <div class="text-gray-400 text-3xl mb-2">

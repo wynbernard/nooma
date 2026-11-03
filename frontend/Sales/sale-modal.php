@@ -32,7 +32,7 @@
                                 <h4 class="text-sm font-bold text-gray-900">Transaction Details</h4>
                                 <span class="h-px flex-1 bg-gray-200"></span>
                             </div>
-                            <div class="grid md:grid-cols-4 gap-4 mb-6">
+                            <div class="grid md:grid-cols-3 gap-4 mb-6">
 
                                 <div>
                                     <label for="saleDate" class="block text-sm font-medium mb-2">
@@ -41,6 +41,19 @@
                                     <input type="date"
                                         id="saleDate"
                                         required
+                                        class="w-full border rounded-xl px-4 py-3">
+                                </div>
+
+                                <div>
+                                    <label for="cashierName" class="block text-sm font-medium mb-2">
+                                        Cashier Name
+                                    </label>
+                                    <input type="text"
+                                        id="cashierName"
+                                        value="<?= htmlspecialchars($full_name, ENT_QUOTES, "UTF-8") ?>"
+                                        maxlength="100"
+                                        required
+                                        placeholder="Enter cashier name"
                                         class="w-full border rounded-xl px-4 py-3">
                                 </div>
 

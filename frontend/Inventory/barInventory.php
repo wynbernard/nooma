@@ -27,10 +27,21 @@ include "../../backend/inventory/bar_inventory.php";
     <?php include "../Components/navbar.php"; ?>
 
     <!-- CONTENT -->
-    <main class="p-6">
+    <main class="p-4 sm:p-6 space-y-6">
+
+        <?php if ($inventorySyncMessage !== ""): ?>
+            <div class="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800" role="status">
+                <?= htmlspecialchars($inventorySyncMessage, ENT_QUOTES, "UTF-8") ?>
+            </div>
+        <?php endif; ?>
+        <?php if ($inventorySyncError !== ""): ?>
+            <div class="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
+                <?= htmlspecialchars($inventorySyncError, ENT_QUOTES, "UTF-8") ?>
+            </div>
+        <?php endif; ?>
 
        <!-- STATISTICS -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4" aria-label="Inventory summary">
             <div class="bg-white border border-gray-200 rounded-2xl p-5 shadow-sm">
                 <div class="flex items-center justify-between">
                     <div>
@@ -94,39 +105,64 @@ include "../../backend/inventory/bar_inventory.php";
         <!-- INVENTORY TABLE -->
         <div class="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
             <!-- HEADER WITH SEARCH & ADD BUTTON -->
-            <div class="p-6 border-b border-gray-200 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div class="p-5 sm:p-6 border-b border-gray-200 flex flex-col xl:flex-row xl:items-center justify-between gap-5">
                 <div>
-                    <h3 class="text-lg font-bold text-gray-900"><?= htmlspecialchars($page_title) ?></h3>
-                    <p class="text-sm text-gray-500 mt-1"><?= htmlspecialchars($page_description) ?></p>
+                    <h1 class="text-xl font-bold text-gray-900"><?= htmlspecialchars($page_title) ?></h1>
+                    <p class="text-sm text-gray-500 mt-1"><?= htmlspecialchars($page_description) ?>.</p>
                 </div>
 
-                <div class="flex flex-col sm:flex-row items-center gap-3">
-                    <form method="get" class="flex w-full sm:w-auto items-center gap-2">
-                        <label for="inventoryDateFilter" class="text-sm text-gray-600 whitespace-nowrap">Date:</label>
-                        <input
-                            type="date"
-                            id="inventoryDateFilter"
-                            name="inventory_date"
-                            value="<?= htmlspecialchars($inventoryDateFilter, ENT_QUOTES, "UTF-8") ?>"
-                            onchange="this.form.submit()"
-                            class="w-full sm:w-auto px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                        <?php if ($inventoryDateFilter !== ""): ?>
-                            <a href="<?= htmlspecialchars(strtok($_SERVER["REQUEST_URI"], "?"), ENT_QUOTES, "UTF-8") ?>" class="text-sm text-blue-600 hover:underline whitespace-nowrap">All dates</a>
-                        <?php endif; ?>
+                <div class="grid grid-cols-1 sm:grid-cols-2 xl:flex items-end gap-3">
+                    <form id="inventorySyncForm" method="post" action="../../api/extraction.php" class="flex min-w-0 items-end gap-2">
+                        <input type="hidden" name="inventory_sync" value="1">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION["inventory_sync_csrf_token"], ENT_QUOTES, "UTF-8") ?>">
+                        <input type="hidden" name="return_page" value="<?= htmlspecialchars($inventoryReturnPage, ENT_QUOTES, "UTF-8") ?>">
+                        <div class="min-w-0 flex-1">
+                            <label for="inventorySyncDate" class="block text-xs font-semibold text-gray-600 mb-1">Transaction date</label>
+                            <input
+                                type="date"
+                                id="inventorySyncDate"
+                                name="sync_date"
+                                value="<?= htmlspecialchars($inventoryDateFilter !== "" ? $inventoryDateFilter : date("Y-m-d"), ENT_QUOTES, "UTF-8") ?>"
+                                required
+                                class="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                        </div>
+                        <button id="inventorySyncButton" type="submit" class="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-wait text-white font-semibold text-sm rounded-xl transition whitespace-nowrap">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5M5 9a7 7 0 0112-3l3 3M19 15a7 7 0 01-12 3l-3-3" />
+                            </svg>
+                            Sync date
+                        </button>
+                    </form>
+                    <form method="get" class="min-w-0">
+                        <label for="inventoryDateFilter" class="block text-xs font-semibold text-gray-600 mb-1">Show inventory date</label>
+                        <div class="flex items-center gap-2">
+                            <input
+                                type="date"
+                                id="inventoryDateFilter"
+                                name="inventory_date"
+                                value="<?= htmlspecialchars($inventoryDateFilter, ENT_QUOTES, "UTF-8") ?>"
+                                onchange="this.form.submit()"
+                                class="w-full px-3 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                            <?php if ($inventoryDateFilter !== ""): ?>
+                                <a href="<?= htmlspecialchars(strtok($_SERVER["REQUEST_URI"], "?"), ENT_QUOTES, "UTF-8") ?>" class="text-sm font-medium text-blue-700 hover:text-blue-900 whitespace-nowrap">All dates</a>
+                            <?php endif; ?>
+                        </div>
                     </form>
                     <!-- SEARCH BOX -->
-                    <div class="relative w-full sm:w-72">
-                        <span class="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-gray-400">
+                    <div class="relative sm:col-span-2 xl:w-64">
+                        <label for="inventorySearch" class="block text-xs font-semibold text-gray-600 mb-1">Find an item</label>
+                        <span class="absolute bottom-0 left-0 flex h-[42px] items-center pl-3.5 pointer-events-none text-gray-400">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                             </svg>
                         </span>
-                        <input type="text" id="inventorySearch" placeholder="Search inventory items..." class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition">
+                        <input type="search" id="inventorySearch" placeholder="Name or unit" class="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition">
                     </div>
 
                     <!-- OPEN MODAL BUTTON -->
-                    <button onclick="openAddModal()" type="button" class="w-full sm:w-auto inline-flex items-center justify-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-xl transition shadow-xs gap-2 cursor-pointer">
+                    <button onclick="openAddModal()" type="button" class="sm:col-span-2 xl:col-span-1 inline-flex items-center justify-center px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm rounded-xl transition shadow-sm gap-2 cursor-pointer">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                         </svg>
@@ -135,64 +171,119 @@ include "../../backend/inventory/bar_inventory.php";
                 </div>
             </div>
 
+            <div class="flex items-center justify-between px-5 py-3 bg-gray-50 border-b border-gray-200">
+                <p id="inventoryResultsCount" class="text-sm font-medium text-gray-700" aria-live="polite">
+                    <?= number_format(count($inventoryItems)) ?> <?= count($inventoryItems) === 1 ? "item" : "items" ?>
+                </p>
+                <p class="hidden sm:block text-xs text-gray-500">Scroll horizontally to see all columns</p>
+            </div>
             <div class="overflow-x-auto">
-                <table id="inventoryTable" class="w-full text-sm">
-                    <thead class="bg-gray-50 border-b border-gray-200">
+                <table id="inventoryTable" class="w-full min-w-[900px] text-sm">
+                    <thead class="sticky top-0 z-10 bg-gray-100 border-b border-gray-200">
                         <tr>
-                            <th class="text-left px-6 py-4 font-semibold text-gray-600">Item Description</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Quantity</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Unit</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Beginning</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Purchases</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Sold</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Used</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Ending</th>
-                            <th class="text-left px-6 py-4 font-semibold text-gray-600">Remarks</th>
-                            <th class="text-center px-6 py-4 font-semibold text-gray-600">Actions</th>
+                            <th scope="col" class="text-left px-5 py-3.5 font-semibold text-gray-700 min-w-[220px]">Item</th>
+                            <th scope="col" class="text-right px-4 py-3.5 font-semibold text-gray-700">Quantity</th>
+                            <th scope="col" class="text-center px-4 py-3.5 font-semibold text-gray-700">Unit</th>
+                            <th scope="col" class="text-right px-4 py-3.5 font-semibold text-gray-700">Beginning</th>
+                            <th scope="col" class="text-right px-4 py-3.5 font-semibold text-gray-700">Purchases</th>
+                            <th scope="col" class="text-right px-4 py-3.5 font-semibold text-gray-700">Sold</th>
+                            <th scope="col" class="text-right px-4 py-3.5 font-semibold text-gray-700">Used</th>
+                            <th scope="col" class="text-right px-4 py-3.5 font-semibold text-gray-700">Ending</th>
+                            <th scope="col" class="text-center px-4 py-3.5 font-semibold text-gray-700">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="inventoryTableBody" class="divide-y divide-gray-100">
                         <?php if (empty($inventoryItems)): ?>
                             <tr id="noInventoryRow" data-inventory-empty-row>
-                                <td colspan="12" class="px-6 py-8 text-center text-gray-500">No inventory items found.</td>
+                                <td colspan="9" class="px-6 py-8 text-center text-gray-500">No inventory items found.</td>
                             </tr>
                         <?php else: ?>
                             <?php foreach ($inventoryItems as $item): ?>
-                                <tr class="inventory-row hover:bg-gray-50" data-inventory-id="<?= (int) $item["inventory_id"] ?>" data-inventory-date="<?= htmlspecialchars((string) $item["inventory_date"], ENT_QUOTES, "UTF-8") ?>" data-quantity="<?= htmlspecialchars((string) $item["quantity"], ENT_QUOTES, "UTF-8") ?>" data-created-at="<?= htmlspecialchars((string) $item["created_at"], ENT_QUOTES, "UTF-8") ?>">
-                                    <td class="px-6 py-4">
+                                <tr class="inventory-row border-b border-gray-100 odd:bg-white even:bg-gray-50/70 hover:bg-blue-50/60 transition-colors" data-inventory-id="<?= (int) $item["inventory_id"] ?>" data-inventory-date="<?= htmlspecialchars((string) $item["inventory_date"], ENT_QUOTES, "UTF-8") ?>" data-quantity="<?= htmlspecialchars((string) $item["quantity"], ENT_QUOTES, "UTF-8") ?>" data-created-at="<?= htmlspecialchars((string) $item["created_at"], ENT_QUOTES, "UTF-8") ?>">
+                                    <td class="px-5 py-4">
                                         <div class="font-semibold text-gray-900 item-desc"><?= htmlspecialchars($item["item_description"]) ?></div>
-                                        <div class="text-xs text-gray-500">Inventory date: <?= htmlspecialchars((string) $item["inventory_date"]) ?></div>
+                                        <?php if (count($item["source_items"] ?? []) > 1): ?>
+                                            <div class="mt-1 text-xs text-blue-700"><?= count($item["source_items"]) ?> records combined across dates</div>
+                                        <?php endif; ?>
                                     </td>
-                                    <td class="px-6 py-4 text-center font-bold text-gray-900"><?= number_format((float) $item["quantity"], 2) ?></td>
-                                    <td class="px-6 py-4 text-center text-gray-600 item-unit"><?= htmlspecialchars($item["unit"]) ?></td>
-                                    <td class="px-6 py-4 text-center text-gray-600"><?= number_format((float) $item["beginning"], 2) ?></td>
-                                    <td class="px-6 py-4 text-center text-green-600 font-medium">+<?= number_format((float) $item["sold"], 2) ?></td>
-                                    <td class="px-6 py-4 text-center text-red-600 font-medium">-<?= number_format((float) $item["purchases"], 2) ?></td>
-                                    <td class="px-6 py-4 text-center text-orange-600 font-medium">-<?= number_format((float) $item["used"], 2) ?></td>
-                                    <td class="px-6 py-4 text-center font-bold text-blue-600"><?= number_format((float) $item["ending"], 2) ?></td>
-                                    <td class="px-6 py-4 text-gray-600 text-xs italic item-remarks"><?= htmlspecialchars($item["remarks"] ?? "—") ?></td>
-                                    <td class="px-6 py-4 text-center">
-                                        <div class="inline-flex items-center gap-2">
-                                            <button type="button" onclick='openUpdateModal(<?= htmlspecialchars(json_encode($item, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP), ENT_QUOTES, "UTF-8") ?>)' class="p-1.5 bg-gray-100 hover:bg-blue-50 text-gray-600 hover:text-blue-600 rounded-lg transition" title="Edit" aria-label="Edit <?= htmlspecialchars($item["item_description"]) ?>">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                </svg>
-                                            </button>
-                                            <button type="button" onclick="openDeleteModal(<?= (int) $item["inventory_id"] ?>, <?= htmlspecialchars(json_encode($item["item_description"], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP), ENT_QUOTES, "UTF-8") ?>)" class="p-1.5 bg-gray-100 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg transition" title="Delete" aria-label="Delete <?= htmlspecialchars($item["item_description"]) ?>">
-                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
-                                        </div>
+                                    <td class="px-4 py-4 text-right font-semibold tabular-nums whitespace-nowrap">
+                                        <?php if ((float) $item["quantity"] <= 5): ?>
+                                            <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-amber-800" title="Low stock" aria-label="Low stock: <?= htmlspecialchars(number_format((float) $item["quantity"], 2), ENT_QUOTES, "UTF-8") ?>">
+                                                <span class="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true"></span>
+                                                <?= number_format((float) $item["quantity"], 2) ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-gray-900"><?= number_format((float) $item["quantity"], 2) ?></span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="px-4 py-4 text-center text-gray-600 item-unit whitespace-nowrap"><?= htmlspecialchars($item["unit"]) ?></td>
+                                    <td class="px-4 py-4 text-right text-gray-700 tabular-nums whitespace-nowrap"><?= number_format((float) $item["beginning"], 2) ?></td>
+                                    <td class="px-4 py-4 text-right text-emerald-700 font-medium tabular-nums whitespace-nowrap">+<?= number_format((float) $item["purchases"], 2) ?></td>
+                                    <td class="px-4 py-4 text-right text-rose-700 font-medium tabular-nums whitespace-nowrap">-<?= number_format((float) $item["sold"], 2) ?></td>
+                                    <td class="px-4 py-4 text-right text-orange-700 font-medium tabular-nums whitespace-nowrap">-<?= number_format((float) $item["used"], 2) ?></td>
+                                    <td class="px-4 py-4 text-right text-blue-700 font-bold tabular-nums whitespace-nowrap"><?= number_format((float) $item["ending"], 2) ?></td>
+                                    <td class="px-4 py-4 text-center">
+                                        <?php if (count($item["source_items"] ?? []) <= 1): ?>
+                                            <div class="inline-flex items-center gap-2">
+                                                <button type="button" onclick='openUpdateModal(<?= htmlspecialchars(json_encode($item["source_items"][0] ?? $item, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP), ENT_QUOTES, "UTF-8") ?>)' class="p-1.5 bg-gray-100 hover:bg-blue-50 text-gray-600 hover:text-blue-600 rounded-lg transition" title="Edit" aria-label="Edit <?= htmlspecialchars($item["item_description"]) ?>">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                    </svg>
+                                                </button>
+                                                <button type="button" onclick="openDeleteModal(<?= (int) $item["inventory_id"] ?>, <?= htmlspecialchars(json_encode($item["item_description"], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP), ENT_QUOTES, "UTF-8") ?>)" class="p-1.5 bg-gray-100 hover:bg-red-50 text-gray-600 hover:text-red-600 rounded-lg transition" title="Delete" aria-label="Delete <?= htmlspecialchars($item["item_description"]) ?>">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                    </svg>
+                                                </button>
+                                            </div>
+                                        <?php else: ?>
+                                            <details class="relative text-left">
+                                                <summary class="cursor-pointer list-none rounded-lg border border-gray-300 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50">Manage entries</summary>
+                                                <div class="absolute right-0 z-20 mt-2 w-72 rounded-xl border border-gray-200 bg-white p-3 shadow-lg">
+                                                    <?php foreach ($item["source_items"] as $sourceItem): ?>
+                                                        <div class="flex items-center justify-between gap-3 py-2 border-b border-gray-100 last:border-0">
+                                                            <span class="min-w-0">
+                                                                <span class="block text-xs font-medium text-gray-800"><?= htmlspecialchars((string) $sourceItem["inventory_date"]) ?></span>
+                                                                <span class="block truncate text-xs text-gray-500"><?= htmlspecialchars((string) $sourceItem["counted_by"]) ?></span>
+                                                            </span>
+                                                            <span class="inline-flex shrink-0 gap-1">
+                                                                <button type="button" onclick='openUpdateModal(<?= htmlspecialchars(json_encode($sourceItem, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP), ENT_QUOTES, "UTF-8") ?>)' class="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-blue-50 hover:text-blue-700" aria-label="Edit <?= htmlspecialchars($item["item_description"]) ?>">Edit</button>
+                                                                <button type="button" onclick="openDeleteModal(<?= (int) $sourceItem["inventory_id"] ?>, <?= htmlspecialchars(json_encode($item["item_description"], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG | JSON_HEX_AMP), ENT_QUOTES, "UTF-8") ?>)" class="rounded-md bg-gray-100 px-2 py-1 text-xs text-gray-700 hover:bg-red-50 hover:text-red-700" aria-label="Delete <?= htmlspecialchars($item["item_description"]) ?>">Delete</button>
+                                                            </span>
+                                                        </div>
+                                                    <?php endforeach; ?>
+                                                </div>
+                                            </details>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php endif; ?>
                         <tr id="noSearchResultsRow" class="hidden">
-                            <td colspan="12" class="px-6 py-8 text-center text-gray-500">No matching inventory items found.</td>
+                            <td colspan="9" class="px-6 py-8 text-center text-gray-500">No matching inventory items found.</td>
                         </tr>
                     </tbody>
                 </table>
+            </div>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-t border-gray-200 bg-white">
+                <label for="inventoryPageSize" class="flex items-center gap-2 text-sm text-gray-600">
+                    Rows per page
+                    <select id="inventoryPageSize" class="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </label>
+                <nav class="flex items-center justify-between sm:justify-end gap-3" aria-label="Inventory pages">
+                    <button id="inventoryPreviousPage" type="button" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Previous
+                    </button>
+                    <span id="inventoryPageIndicator" class="min-w-[5rem] text-center text-sm text-gray-600" aria-live="polite">Page 1 of 1</span>
+                    <button id="inventoryNextPage" type="button" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                        Next
+                    </button>
+                </nav>
             </div>
         </div>
 
@@ -267,32 +358,70 @@ window.onclick = function(event) {
 
 // Live Search Filter Script
 const searchInput = document.getElementById('inventorySearch');
+const inventoryPageSizeSelect = document.getElementById('inventoryPageSize');
+const inventoryPreviousPage = document.getElementById('inventoryPreviousPage');
+const inventoryNextPage = document.getElementById('inventoryNextPage');
+const inventoryPageIndicator = document.getElementById('inventoryPageIndicator');
+let currentInventoryPage = 1;
+
 function filterInventoryRows() {
     if (!searchInput) {
         return;
     }
 
     const query = searchInput.value.toLowerCase().trim();
-    const rows = document.querySelectorAll('.inventory-row');
-    let visibleCount = 0;
+    const allRows = Array.from(document.querySelectorAll('.inventory-row'));
+    const matchingRows = allRows.filter(row => row.textContent.toLowerCase().includes(query));
+    const pageSize = Number(inventoryPageSizeSelect.value);
+    const totalPages = Math.max(1, Math.ceil(matchingRows.length / pageSize));
+    currentInventoryPage = Math.min(currentInventoryPage, totalPages);
+    const startIndex = (currentInventoryPage - 1) * pageSize;
+    const endIndex = Math.min(startIndex + pageSize, matchingRows.length);
+    const visibleRows = new Set(matchingRows.slice(startIndex, endIndex));
 
-    rows.forEach(row => {
-        const visible = row.textContent.toLowerCase().includes(query);
-        row.style.display = visible ? '' : 'none';
-        if (visible) {
-            visibleCount++;
-        }
+    allRows.forEach(row => {
+        row.style.display = visibleRows.has(row) ? '' : 'none';
     });
 
     const noSearchRow = document.getElementById('noSearchResultsRow');
     if (noSearchRow) {
-        noSearchRow.classList.toggle('hidden', visibleCount > 0 || rows.length === 0);
+        noSearchRow.classList.toggle('hidden', matchingRows.length > 0 || allRows.length === 0);
     }
+
+    const resultsCount = document.getElementById('inventoryResultsCount');
+    if (resultsCount) {
+        const itemLabel = matchingRows.length === 1 ? 'item' : 'items';
+        resultsCount.textContent = matchingRows.length === 0
+            ? (query ? `No matching ${itemLabel}` : `0 ${itemLabel}`)
+            : `Showing ${startIndex + 1}–${endIndex} of ${matchingRows.length} ${itemLabel}`;
+    }
+
+    inventoryPageIndicator.textContent = `Page ${currentInventoryPage} of ${totalPages}`;
+    inventoryPreviousPage.disabled = currentInventoryPage === 1;
+    inventoryNextPage.disabled = currentInventoryPage === totalPages;
 }
 
 if (searchInput) {
-    searchInput.addEventListener('input', filterInventoryRows);
+    searchInput.addEventListener('input', () => {
+        currentInventoryPage = 1;
+        filterInventoryRows();
+    });
 }
+inventoryPageSizeSelect.addEventListener('change', () => {
+    currentInventoryPage = 1;
+    filterInventoryRows();
+});
+inventoryPreviousPage.addEventListener('click', () => {
+    if (currentInventoryPage > 1) {
+        currentInventoryPage--;
+        filterInventoryRows();
+    }
+});
+inventoryNextPage.addEventListener('click', () => {
+    currentInventoryPage++;
+    filterInventoryRows();
+});
+filterInventoryRows();
 
 // Chart Script
 const inventoryChartData = <?= json_encode($inventoryChartData, JSON_UNESCAPED_SLASHES) ?>;
@@ -382,43 +511,44 @@ function createInventoryCell(className, value) {
 
 function createInventoryRow(item) {
     const row = document.createElement('tr');
-    row.className = 'inventory-row hover:bg-gray-50';
+    row.className = 'inventory-row border-b border-gray-100 odd:bg-white even:bg-gray-50/70 hover:bg-blue-50/60 transition-colors';
     row.dataset.inventoryId = item.inventory_id;
     row.dataset.inventoryDate = item.inventory_date;
     row.dataset.quantity = item.quantity;
     row.dataset.createdAt = item.created_at || new Date().toISOString();
 
     const descriptionCell = document.createElement('td');
-    descriptionCell.className = 'px-6 py-4';
+    descriptionCell.className = 'px-5 py-4';
     const description = document.createElement('div');
     description.className = 'font-semibold text-gray-900 item-desc';
     description.textContent = item.item_description;
-    const metadata = document.createElement('div');
-    metadata.className = 'text-xs text-gray-500';
-    metadata.append('Counted by: ');
-    const countedBy = document.createElement('span');
-    countedBy.className = 'counted-by';
-    countedBy.textContent = item.counted_by;
-    metadata.append(countedBy, ' (');
-    const inventoryDate = document.createElement('span');
-    inventoryDate.className = 'inv-date';
-    inventoryDate.textContent = item.inventory_date;
-    metadata.append(inventoryDate, ')');
-    descriptionCell.append(description, metadata);
+    descriptionCell.append(description);
     row.appendChild(descriptionCell);
-    row.appendChild(createInventoryCell('px-6 py-4 text-gray-600 item-department', item.department));
-    row.appendChild(createInventoryCell('px-6 py-4 text-gray-600 item-type', item.type));
-    row.appendChild(createInventoryCell('px-6 py-4 text-center font-bold text-gray-900', formatInventoryNumber(item.quantity)));
-    row.appendChild(createInventoryCell('px-6 py-4 text-center text-gray-600 item-unit', item.unit));
-    row.appendChild(createInventoryCell('px-6 py-4 text-center text-gray-600', formatInventoryNumber(item.beginning)));
-    row.appendChild(createInventoryCell('px-6 py-4 text-center text-green-600 font-medium', '+' + formatInventoryNumber(item.purchases)));
-    row.appendChild(createInventoryCell('px-6 py-4 text-center text-red-600 font-medium', '-' + formatInventoryNumber(item.sold_used)));
-    row.appendChild(createInventoryCell('px-6 py-4 text-center text-orange-600 font-medium', '-0.00'));
-    row.appendChild(createInventoryCell('px-6 py-4 text-center font-bold text-blue-600', formatInventoryNumber(item.ending)));
-    row.appendChild(createInventoryCell('px-6 py-4 text-gray-600 text-xs italic item-remarks', item.remarks || '—'));
-
+    const quantityCell = document.createElement('td');
+    quantityCell.className = 'px-4 py-4 text-right font-semibold tabular-nums whitespace-nowrap';
+    const quantity = Number(item.quantity || 0);
+    if (quantity <= 5) {
+        const lowStockLabel = document.createElement('span');
+        lowStockLabel.className = 'inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-amber-800';
+        lowStockLabel.title = 'Low stock';
+        lowStockLabel.appendChild(document.createElement('span'));
+        lowStockLabel.firstChild.className = 'h-1.5 w-1.5 rounded-full bg-amber-500';
+        lowStockLabel.firstChild.setAttribute('aria-hidden', 'true');
+        lowStockLabel.append(formatInventoryNumber(quantity));
+        quantityCell.appendChild(lowStockLabel);
+    } else {
+        quantityCell.textContent = formatInventoryNumber(quantity);
+        quantityCell.classList.add('text-gray-900');
+    }
+    row.appendChild(quantityCell);
+    row.appendChild(createInventoryCell('px-4 py-4 text-center text-gray-600 item-unit whitespace-nowrap', item.unit));
+    row.appendChild(createInventoryCell('px-4 py-4 text-right text-gray-700 tabular-nums whitespace-nowrap', formatInventoryNumber(item.beginning)));
+    row.appendChild(createInventoryCell('px-4 py-4 text-right text-emerald-700 font-medium tabular-nums whitespace-nowrap', '+' + formatInventoryNumber(item.purchases)));
+    row.appendChild(createInventoryCell('px-4 py-4 text-right text-rose-700 font-medium tabular-nums whitespace-nowrap', '-' + formatInventoryNumber(item.sold_used)));
+    row.appendChild(createInventoryCell('px-4 py-4 text-right text-orange-700 font-medium tabular-nums whitespace-nowrap', '-' + formatInventoryNumber(item.used)));
+    row.appendChild(createInventoryCell('px-4 py-4 text-right text-blue-700 font-bold tabular-nums whitespace-nowrap', formatInventoryNumber(item.ending)));
     const actionsCell = document.createElement('td');
-    actionsCell.className = 'px-6 py-4 text-center';
+    actionsCell.className = 'px-4 py-4 text-center';
     const actions = document.createElement('div');
     actions.className = 'inline-flex items-center gap-2';
     const editButton = document.createElement('button');
@@ -467,6 +597,9 @@ function updateInventorySummary() {
 
 function updateInventoryTable(item, action) {
     const tableBody = document.getElementById('inventoryTableBody');
+    if (action === 'add') {
+        currentInventoryPage = 1;
+    }
     const existingRow = Array.from(tableBody.querySelectorAll('.inventory-row'))
         .find(row => Number(row.dataset.inventoryId) === Number(item.inventory_id));
 
@@ -493,7 +626,7 @@ function updateInventoryTable(item, action) {
             emptyRow.id = 'noInventoryRow';
             emptyRow.dataset.inventoryEmptyRow = '';
             const emptyCell = createInventoryCell('px-6 py-8 text-center text-gray-500', 'No inventory items found.');
-            emptyCell.colSpan = 12;
+            emptyCell.colSpan = 9;
             emptyRow.appendChild(emptyCell);
             tableBody.prepend(emptyRow);
         }
@@ -522,16 +655,15 @@ document.querySelectorAll('form[data-inventory-form]').forEach(form => {
                 throw new Error(payload.message || 'Could not save inventory changes.');
             }
 
-            updateInventoryTable(payload.item || { inventory_id: payload.inventory_id }, payload.action);
-            window.showToast(payload.message || 'Inventory updated successfully.');
-            if (payload.action === 'add') {
-                form.reset();
-                closeAddModal();
-            } else if (payload.action === 'update') {
-                closeUpdateModal();
-            } else if (payload.action === 'delete') {
-                closeDeleteModal();
+            try {
+                sessionStorage.setItem('inventoryMutationMessage', JSON.stringify({
+                    message: payload.message || 'Inventory updated successfully.',
+                    type: 'success'
+                }));
+            } catch (storageError) {
+                console.error('Could not retain the inventory success message after reload.', storageError);
             }
+            window.location.reload();
         } catch (error) {
             window.showToast(error.message || 'Could not save inventory changes.', 'error');
         } finally {
@@ -539,6 +671,204 @@ document.querySelectorAll('form[data-inventory-form]').forEach(form => {
         }
     });
 });
+
+const inventorySavedDates = new Set(<?= json_encode($inventorySavedDates, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>);
+let inventoryCheckedDates = new Set();
+try {
+    const checkedDates = JSON.parse(sessionStorage.getItem('inventoryCheckedDates') || '[]');
+    if (Array.isArray(checkedDates)) {
+        inventoryCheckedDates = new Set(checkedDates.filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date)));
+    }
+} catch (storageError) {
+    console.error('Could not read the completed inventory sync dates.', storageError);
+}
+let inventorySyncInProgress = false;
+
+function markInventoryDateChecked(syncDate) {
+    inventoryCheckedDates.add(syncDate);
+    try {
+        sessionStorage.setItem('inventoryCheckedDates', JSON.stringify(Array.from(inventoryCheckedDates)));
+    } catch (storageError) {
+        console.error('Could not retain the completed inventory sync date.', storageError);
+    }
+}
+
+async function requestInventorySync(syncDate) {
+    const form = document.getElementById('inventorySyncForm');
+    const formData = new FormData(form);
+    formData.set('sync_date', syncDate);
+
+    const response = await fetch(form.action, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Accept': 'application/json' },
+        cache: 'no-store'
+    });
+    const payload = await response.json();
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || `Could not sync inventory for ${syncDate}.`);
+    }
+    return payload;
+}
+
+function reloadAfterInventorySync(message, type = 'success') {
+    try {
+        sessionStorage.setItem('inventoryMutationMessage', JSON.stringify({ message, type }));
+    } catch (storageError) {
+        console.error('Could not retain the sync result after reload.', storageError);
+        window.showToast(message, type);
+    }
+    window.location.reload();
+}
+
+function getMissingInventoryDates() {
+    const now = new Date();
+    const today = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, '0'),
+        String(now.getDate()).padStart(2, '0')
+    ].join('-');
+    const savedDates = Array.from(inventorySavedDates).sort();
+    const firstDate = savedDates.length > 0
+        ? savedDates[0]
+        : today;
+    const [startYear, startMonth, startDay] = firstDate.split('-').map(Number);
+    const [endYear, endMonth, endDay] = today.split('-').map(Number);
+    const currentDate = new Date(Date.UTC(startYear, startMonth - 1, startDay));
+    const endDate = new Date(Date.UTC(endYear, endMonth - 1, endDay));
+    const missingDates = [];
+
+    while (currentDate <= endDate) {
+        const dateString = currentDate.toISOString().slice(0, 10);
+        if (!inventorySavedDates.has(dateString) && !inventoryCheckedDates.has(dateString)) {
+            missingDates.push(dateString);
+        }
+        currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+    }
+
+    return missingDates;
+}
+
+async function syncStoreHubInventory() {
+    if (inventorySyncInProgress) {
+        return;
+    }
+
+    const dateInput = document.getElementById('inventorySyncDate');
+    const syncButton = document.getElementById('inventorySyncButton');
+    inventorySyncInProgress = true;
+    syncButton.disabled = true;
+    dateInput.disabled = true;
+    syncButton.textContent = 'Syncing...';
+
+    try {
+        const payload = await requestInventorySync(dateInput.value);
+        if (payload.skipped) {
+            markInventoryDateChecked(dateInput.value);
+            window.showToast(payload.message || 'Inventory for this date is already saved.');
+            return;
+        }
+
+        markInventoryDateChecked(dateInput.value);
+        reloadAfterInventorySync(payload.message || 'StoreHub inventory synced successfully.');
+    } catch (error) {
+        window.showToast(error.message || 'Could not sync StoreHub transactions.', 'error');
+    } finally {
+        inventorySyncInProgress = false;
+        syncButton.disabled = false;
+        dateInput.disabled = false;
+        syncButton.textContent = 'Sync date';
+    }
+}
+
+async function syncMissingInventoryDates() {
+    if (inventorySyncInProgress) {
+        return;
+    }
+
+    const missingDates = getMissingInventoryDates();
+    if (missingDates.length === 0) {
+        return;
+    }
+
+    const dateInput = document.getElementById('inventorySyncDate');
+    const syncButton = document.getElementById('inventorySyncButton');
+    inventorySyncInProgress = true;
+    syncButton.disabled = true;
+    dateInput.disabled = true;
+    syncButton.textContent = `Syncing 0/${missingDates.length}...`;
+    let syncedCount = 0;
+    let failedDate = '';
+    let failureMessage = '';
+
+    try {
+        for (let index = 0; index < missingDates.length; index += 1) {
+            const syncDate = missingDates[index];
+            syncButton.textContent = `Syncing ${index + 1}/${missingDates.length}...`;
+            const payload = await requestInventorySync(syncDate);
+            markInventoryDateChecked(syncDate);
+            if (!payload.skipped) {
+                const hasSavedProducts = Array.isArray(payload.inventory) && payload.inventory.length > 0;
+                if (hasSavedProducts) {
+                    inventorySavedDates.add(syncDate);
+                    syncedCount += 1;
+                }
+            } else {
+                inventorySavedDates.add(syncDate);
+            }
+        }
+
+        if (syncedCount > 0) {
+            reloadAfterInventorySync(`Caught up inventory: ${syncedCount} missing date${syncedCount === 1 ? '' : 's'} synced.`);
+            return;
+        }
+    } catch (error) {
+        failedDate = missingDates.find(date => !inventoryCheckedDates.has(date)) || '';
+        failureMessage = error.message || 'Could not sync missing inventory dates.';
+    } finally {
+        inventorySyncInProgress = false;
+        syncButton.disabled = false;
+        dateInput.disabled = false;
+        syncButton.textContent = 'Sync date';
+    }
+
+    if (failureMessage) {
+        const message = failedDate
+            ? `Automatic catch-up stopped on ${failedDate}: ${failureMessage}`
+            : failureMessage;
+        if (syncedCount > 0) {
+            reloadAfterInventorySync(message, 'error');
+            return;
+        }
+        window.showToast(message, 'error');
+    }
+}
+
+document.getElementById('inventorySyncForm').addEventListener('submit', event => {
+    event.preventDefault();
+    syncStoreHubInventory();
+});
+document.getElementById('inventorySyncDate').addEventListener('change', syncStoreHubInventory);
+syncMissingInventoryDates();
+window.setInterval(syncMissingInventoryDates, 7 * 60 * 60 * 1000);
+</script>
+
+<script>
+try {
+    const inventoryMutationMessage = sessionStorage.getItem('inventoryMutationMessage');
+    if (inventoryMutationMessage) {
+        sessionStorage.removeItem('inventoryMutationMessage');
+        let result;
+        try {
+            result = JSON.parse(inventoryMutationMessage);
+        } catch {
+            result = { message: inventoryMutationMessage, type: 'success' };
+        }
+        window.showToast(result.message, result.type || 'success');
+    }
+} catch (storageError) {
+    console.error('Could not read the previous inventory sync result.', storageError);
+}
 </script>
 
 <?php if ($success_message !== "" || $error_message !== ""): ?>
