@@ -64,7 +64,6 @@ if ($reportIds) {
     }
 }
 
-$unpaidOwnerAccountIds = [];
 $unpaidOwnerAmounts = []; // keyed by account_holder_id
 $unpaidNonOwnerAccounts = [];
 $unpaidNonOwnerNotes = []; // Store notes for non-owner accounts
@@ -103,7 +102,6 @@ foreach ($reports as $report) {
             $reportOwnerAccounts = $payload["ownerAccounts"] ?? [];
             $ownerAmount = $money($reportOwnerAccounts[$aid] ?? 0);
             if (stripos($value, "unpaid") !== false && !$isPaidNote($value)) {
-                $unpaidOwnerAccountIds[$aid] = true;
                 $unpaidOwnerAmounts[$aid] = ($unpaidOwnerAmounts[$aid] ?? 0) + $ownerAmount;
             }
         }
@@ -466,16 +464,6 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
 
                             <!-- RECEIVABLES -->
                             <tr><td colspan="8" class="px-4 pt-4 pb-1 font-bold text-red-700">RECEIVABLES:</td></tr>
-                            <!-- <?php 
-                            $unpaidOwnerTotal = 0;
-                            foreach ($ownerAccounts as $label => $amount) {
-                                $accountId = $ownerAccountIds[$label] ?? null;
-                                if ($accountId && !empty($unpaidOwnerAccountIds[$accountId])) {
-                                    $unpaidOwnerTotal += $amount;
-                                }
-                            }
-                            $ownerAccountTotal = $ownerTotal - $nonPosOwnerTotal;
-                            ?> -->
                             <tr class="border-b border-gray-200">
                                 <td colspan="2" class="px-4 py-1 font-semibold text-red-700 border-r border-gray-200">OWNER'S ACCT (SUM)</td>
                                 <td class="px-4 py-1 text-right font-semibold border-r border-gray-200"><?= peso($ownerAccountTotal) ?></td>
@@ -485,18 +473,14 @@ $totalGrossSales = $totalPos + $nonPos + $grabNet;
                             <?php foreach ($ownerAccounts as $label => $amount): ?>
                                 <?php
                                 $accountId = $ownerAccountIds[$label] ?? null;
-                                $isUnpaid = $accountId && !empty($unpaidOwnerAccountIds[$accountId]);
-                                if (!$isUnpaid) {
-                                    continue;
-                                }
-                                $unpaidAmount = $unpaidOwnerAmounts[$accountId] ?? 0;
-                                $nonPosOwnerAmount = $nonPosUnpaidOwnerAmounts[$accountId] ?? 0;
-                                $posOwnerAmount = $unpaidAmount - $nonPosOwnerAmount;
+                                $nonPosOwnerAmount = $accountId
+                                    ? ($nonPosOwnerAccounts[$accountId] ?? 0) + ($nonPosUnpaidOwnerAmounts[$accountId] ?? 0)
+                                    : 0;
+                                $posOwnerAmount = $amount - $nonPosOwnerAmount;
                                 ?>
-                                <tr class="border-b border-gray-200 bg-red-50">
+                                <tr class="border-b border-gray-200">
                                     <td colspan="2" class="px-4 py-1 pl-8 border-r border-gray-200">
-                                        <?= htmlspecialchars(strtoupper($label)) ?>
-                                        <span class="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border-red-200">UNPAID</span>
+                                        <?= htmlspecialchars(strtoupper($label), ENT_QUOTES, "UTF-8") ?>
                                     </td>
                                     <td class="px-4 py-1 text-right border-r border-gray-200"><?= peso($posOwnerAmount) ?></td>
                                     <td class="px-4 py-1 text-right border-r border-gray-200"><?= peso($nonPosOwnerAmount) ?></td>
